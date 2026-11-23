@@ -1,0 +1,174 @@
+{
+  "info": {
+    "name": "HF Spaces OpenAI Gateway — Public Images API",
+    "description": "OpenAI Images-compatible Hugging Face Spaces gateway. Anonymous requests by default; optionally add X-HF-Token: {{hf_token}} to generation and editing requests. Do not store real tokens in shared collections.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://duan0320-hf-spaces-openai-gateway.hf.space"
+    },
+    {
+      "key": "hf_token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "查询模型列表（匿名）",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/models",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "models"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Qwen-Image-2.1 文生图（JSON）",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/images/generations",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "images",
+            "generations"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"qwen-image-2.1\",\n  \"prompt\": \"A cute cat sitting by a sunny window\",\n  \"size\": \"1024x1024\",\n  \"n\": 1,\n  \"response_format\": \"b64_json\",\n  \"seed\": 42,\n  \"extra_body\": {\n    \"negative_prompt\": \"blurry, low quality\",\n    \"quality\": \"speed\",\n    \"custom_size\": true\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Z-Image-Turbo 文生图（JSON）",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/images/generations",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "images",
+            "generations"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"z-image-turbo\",\n  \"prompt\": \"A futuristic city at sunrise, cinematic photo\",\n  \"size\": \"1024x1024\",\n  \"n\": 1,\n  \"response_format\": \"b64_json\",\n  \"seed\": -1,\n  \"extra_body\": {\n    \"steps\": 9\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Qwen 图片编辑（选择 image 文件）",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/images/edits",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "images",
+            "edits"
+          ]
+        },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "model",
+              "value": "qwen-image-2.1",
+              "type": "text"
+            },
+            {
+              "key": "prompt",
+              "value": "将背景改为樱花公园，保留主体",
+              "type": "text"
+            },
+            {
+              "key": "image",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "size",
+              "value": "1024x1024",
+              "type": "text"
+            },
+            {
+              "key": "n",
+              "value": "1",
+              "type": "text"
+            },
+            {
+              "key": "seed",
+              "value": "42",
+              "type": "text"
+            },
+            {
+              "key": "extra_body",
+              "value": "{\"quality\":\"speed\",\"negative_prompt\":\"blurry\",\"custom_size\":true}",
+              "type": "text"
+            }
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
