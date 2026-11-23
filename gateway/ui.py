@@ -16,6 +16,7 @@ from PIL import Image
 
 from .adapter import invoke
 from .models import load_profiles
+from .token_quota import token_quota_info
 
 SIZE_LABEL = lambda s: s.replace("x", " × ")
 logger = logging.getLogger(__name__)
@@ -165,7 +166,10 @@ def create_ui():
                 with gr.Accordion("Hugging Face Token（可选）", open=True):
                     token = gr.Textbox(type="password", label="HF Token",
                         placeholder="留空匿名；填写 hf_... 使用你的 ZeroGPU 额度")
-                    gr.Markdown("Token 仅传给本次选择的上游 Space，不保存；匿名调用受上游队列与额度限制。")
+                    quota_button = gr.Button("验证 Token / 查询 ZeroGPU 可用时长", size="sm")
+                    quota_status = gr.Markdown("输入 HF Token 后点击查询，可查看剩余额度及下次重置时间。")
+                    quota_button.click(token_quota_info, inputs=[token], outputs=[quota_status], api_visibility="private", concurrency_limit=2)
+                    gr.Markdown("Token 仅用于当前请求；额度查询不会保存或打印 Token。")
                 with gr.Accordion("模型专属参数 · JSON", open=False):
                     extra = gr.Code(value="{}", language="json", label="extra_body（由不同 Space 解释）", lines=6)
                     gr.Markdown("例如 `{\"negative_prompt\": \"blurry\"}`，实际可用参数由该 Space 的接口决定。")
