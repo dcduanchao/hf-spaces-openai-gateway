@@ -1,0 +1,261 @@
+# OpenAI Images API 使用指南
+
+> 本项目将 Hugging Face Gradio Spaces 封装为 **OpenAI Images API 兼容接口**。文中示例对应当前仓库的 `gateway/main.py`、`gateway/catalog.json` 及各模型适配器。它不是 OpenAI 官方图像服务。
+
+- 在线 API Base URL：`https://duan0320-hf-spaces-openai-gateway.hf.space/v1`
+- 图片工作室：`https://duan0320-hf-spaces-openai-gateway.hf.space/`
+- 模型列表：`GET /v1/models`
+- 文生图：`POST /v1/images/generations`
+- 图片编辑：`POST /v1/images/edits`
+- 健康检查：`GET /health`
+
+## 1. 安装和鉴权
+
+在部署网关的 Hugging Face Space Secrets 中设置 `GATEWAY_API_KEY`。客户端必须使用这一密钥进行 Bearer 鉴权，而非直接使用 HF Token。
+
+```bash
+pip install -U openai
+export GATEWAY_BASE_URL="https://duan0320-hf-spaces-openai-gateway.hf.space/v1"
+export GATEWAY_API_KEY="替换成你自己配置的网关密钥"
+```
+
+本地部署则改为 `http://localhost:7860/v1`。
+
+### 重要：网关密钥和 HF Token 的区别
+
+- `GATEWAY_API_KEY`：校验客户端访问权限。
+- `UPSTREAM_HF_TOKEN`：可选的 **服务器端** HF Token；OpenAI API 使用该 Token 调用上游。任何持有网关密钥的人都可能间接消耗这个 HF 账号的 ZeroGPU 额度。
+- Gradio 网页工作室中的访客 HF Token 输入框只适用于网页交互，不会自动传给 OpenAI API。
+- 不要将任何真实 Token 提交到 GitHub 或放入公开示例。
+
+## 2. 当前支持的模型
+
+| 模型 ID | 上游 | 文生图 | 图片编辑 | 模型专属参数 |
+|---|---|---|---|---|
+| `qwen-image-2.1` | `duan0320/Qwen-Image-2.1` | ✅ | ✅，1–4 张图片 | `quality`、`negative_prompt`、`custom_size` |
+| `z-image-turbo` | `mrfakename/Z-Image-Turbo` | ✅ | ❌ | `steps` |
+
+查询实际启用模型及其支持尺寸和参数：
+
+```bash
+curl -sS "$GATEWAY_BASE_URL/models" \
+  -H "Authorization: Bearer $GATEWAY_API_KEY"
+```
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=os.environ["GATEWAY_BASE_URL"],
+    api_key=os.environ["GATEWAY_API_KEY"],
+    timeout=300.0,
+)
+for model in client.models.list().data:
+    print(model.id)
+```
+
+## 3. Qwen-Image-2.1 文生图
+
+### Python（OpenAI SDK）
+
+```python
+import os
+import base64
+from pathlib import Path
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=os.getenv("GATEWAY_BASE_URL", "https://duan0320-hf-spaces-openai-gateway.hf.space/v1"),
+    api_key=os.environ["GATEWAY_API_KEY"],
+    timeout=300.0,
+)
+result = client.images.generate(
+    model="qwen-image-2.1",
+    prompt="雨后的东京街道，霓虹灯倒影，电影摄影，丰富细节",
+    size="1024x1024",
+    n=1,
+    extra_body={
+        "seed": 42,
+        "negative_prompt": "blurry, low quality",
+        "quality": "speed",
+        "custom_size": True
+    },
+)
+Path("qwen.png").write_bytes(base64.b64decode(result.data[0].b64_json))
+print("已保存 qwen.png")
+```
+
+`quality` 的值为 `speed`（默认）或 `quality`，`custom_size` 默认 `true`，`negative_prompt` 默认空字符串。Seed 为 `-1` 时使用随机值。当前适配器始终关闭提示词扩展（`enable_extend=False`）。
+
+支持尺寸：`1024x1024`、`1344x768`、`768x1344`、`1184x864`、`864x1184`、`2048x2048`、`2688x1536`、`1536x2688`、`2368x1728`、`1728x2368`。
+
+### cURL
+
+```bash
+curl -sS "$GATEWAY_BASE_URL/images/generations" \
+  -H "Authorization: Bearer $GATEWAY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen-image-2.1",
+    "prompt": "A cozy bookstore at night, warm lighting",
+    "size": "1024x1024",
+    "n": 1,
+    "seed": 42,
+    "extra_body": {
+      "quality": "speed",
+      "negative_prompt": "blurry",
+      "custom_size": true
+    }
+  }' > qwen-response.json
+
+python -c 'import json,base64; open("qwen.png","wb").write(base64.b64decode(json.load(open("qwen-response.json"))["data"][0]["b64_json"]))'
+```
+
+Python SDK 的 `extra_body` 通常会合并为 HTTP JSON 顶层字段；网关同时支持 HTTP JSON 内嵌 `extra_body` 对象。
+
+## 4. Qwen-Image-2.1 图片编辑
+
+网关的 `POST /v1/images/edits` 接收 **multipart/form-data**。支持 1–4 张 JPEG、PNG 或 WebP 参考图，每张不超过 10 MB。请求中的 `extra_body` 表单字段应为 JSON 字符串。
+
+### Python（OpenAI SDK，单图）
+
+```python
+import os
+import base64
+from pathlib import Path
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=os.getenv("GATEWAY_BASE_URL", "https://duan0320-hf-spaces-openai-gateway.hf.space/v1"),
+    api_key=os.environ["GATEWAY_API_KEY"],
+    timeout=300.0,
+)
+with open("input.png", "rb") as image:
+    result = client.images.edit(
+        model="qwen-image-2.1",
+        image=image,
+        prompt="保留主体，将背景替换为樱花盛开的公园，写实风格",
+        size="1024x1024",
+        n=1,
+    )
+Path("qwen-edit.png").write_bytes(base64.b64decode(result.data[0].b64_json))
+print("已保存 qwen-edit.png")
+```
+
+### cURL（设置专属参数、Seed）
+
+```bash
+curl -sS "$GATEWAY_BASE_URL/images/edits" \
+  -H "Authorization: Bearer $GATEWAY_API_KEY" \
+  -F "model=qwen-image-2.1" \
+  -F "prompt=保留人物姿态，将背景改为海边日落" \
+  -F "image=@input.png;type=image/png" \
+  -F "size=1024x1024" \
+  -F "n=1" \
+  -F "seed=42" \
+  -F 'extra_body={"quality":"speed","negative_prompt":"blurry","custom_size":true}' \
+  > edit-response.json
+
+python -c 'import json,base64; open("qwen-edit.png","wb").write(base64.b64decode(json.load(open("edit-response.json"))["data"][0]["b64_json"]))'
+```
+
+多张参考图片时，额外重复 `-F "image=@reference2.png;type=image/png"`，总数最多 4 张。图片编辑可能被上游的安全分类器拒绝，具体取决于上游 Space。
+
+> 注意：本项目已修复专用 Qwen 适配器在 `/v1/images/edits` 入口被传统 bindings 检查错误拦截的问题。该修复不改变上游空间自身的可用性或策略。
+
+## 5. Z-Image-Turbo 文生图
+
+上游：[mrfakename/Z-Image-Turbo](https://huggingface.co/spaces/mrfakename/Z-Image-Turbo)。网关调用 `/generate_image`，接受 `steps` 整数 1–30（默认 8），内部将 `seed=-1` 转成随机值，并设置 `randomize_seed=False`。
+
+### Python（OpenAI SDK）
+
+```python
+import os
+import base64
+from pathlib import Path
+from openai import OpenAI
+
+client = OpenAI(
+    base_url=os.getenv("GATEWAY_BASE_URL", "https://duan0320-hf-spaces-openai-gateway.hf.space/v1"),
+    api_key=os.environ["GATEWAY_API_KEY"],
+    timeout=300.0,
+)
+result = client.images.generate(
+    model="z-image-turbo",
+    prompt="A cinematic photo of a futuristic city at sunrise, ultra detailed",
+    size="1024x1024",
+    n=1,
+    extra_body={"seed": -1, "steps": 9},
+)
+Path("z-image.png").write_bytes(base64.b64decode(result.data[0].b64_json))
+print("已保存 z-image.png")
+```
+
+支持尺寸：`512x512`、`768x768`、`1024x1024`、`768x1024`、`1024x768`、`512x768`、`768x512`。**不支持图片编辑**。
+
+### cURL
+
+```bash
+curl -sS "$GATEWAY_BASE_URL/images/generations" \
+  -H "Authorization: Bearer $GATEWAY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "z-image-turbo",
+    "prompt": "A tiny robot reading in a sunlit library",
+    "size": "1024x1024",
+    "n": 1,
+    "seed": 42,
+    "extra_body": {"steps": 9}
+  }' > z-image-response.json
+
+python -c 'import json,base64; open("z-image.png","wb").write(base64.b64decode(json.load(open("z-image-response.json"))["data"][0]["b64_json"]))'
+```
+
+## 6. 通用请求参数
+
+| 字段 | 说明 |
+|---|---|
+| `model` | 必填：`qwen-image-2.1` 或 `z-image-turbo` |
+| `prompt` | 必填，1–4000 字符 |
+| `size` | 可选，必须属于相应模型的支持尺寸，默认 `1024x1024` |
+| `n` | 1–4，默认 1；逐张串行请求上游 |
+| `seed` | 可选，默认 `-1` 随机；指定非负值时连续图片的 Seed 依次 +1 |
+| `response_format` | 仅支持 `b64_json`，不支持 `url` |
+| `extra_body` | 模型专属参数；生成接口支持 JSON 对象，编辑接口表单需要 JSON 字符串 |
+
+### 返回结构
+
+```json
+{
+  "created": 1795000000,
+  "data": [
+    {"b64_json": "<此处为 Base64 编码的 PNG 数据>"}
+  ],
+  "model": "z-image-turbo"
+}
+```
+
+`created` 是实际服务端 Unix 时间戳，上面只是结构示意。图片均转成 PNG，返回内容较大；如需保存，请解码 `b64_json`，不要直接当成下载 URL。
+
+## 7. 常见错误
+
+| HTTP 状态 | 错误码 | 解释 |
+|---|---|---|
+| 503 | `gateway_unconfigured` | Space 未配置 `GATEWAY_API_KEY` |
+| 401 | `invalid_api_key` | 网关 Bearer API Key 无效 |
+| 404 | `model_not_found` | 模型 ID 错误或已禁用 |
+| 400 | `unsupported_mode` | 模型不支持对应的生成/编辑能力 |
+| 400 | `invalid_parameters` | 尺寸、Seed 或扩展参数不合法 |
+| 400 | `unsupported_format` | 请求了不支持的返回格式 |
+| 502 | `upstream_failed` | 上游 Space 无法执行，可能是额度、排队、依赖、模型加载或 API 变动 |
+
+图片编辑的数量、类型和文件大小错误可能返回其他 400/413 响应。可在 HF Space Container Logs 中按 `[hf-upstream]` 查询接口、参数和耗时诊断信息。成功部署并不代表上游 GPU 调用一定成功。
+
+## 8. 源码索引
+
+- `gateway/catalog.json` — 模型清单与尺寸、专属参数。
+- `gateway/main.py` — OpenAI API 路由与鉴权。
+- `gateway/qwen_image.py` — Qwen 的两阶段调用：`/prepare_request` → `/generate_request`。
+- `gateway/z_image.py` — Z-Image-Turbo 的 `/generate_image` 调用。
+- `gateway/upstream_logging.py` — 上游追踪日志。
