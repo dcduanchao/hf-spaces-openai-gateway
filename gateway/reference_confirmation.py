@@ -32,7 +32,7 @@ def preview_candidate(results, index):
     if not isinstance(index, int) or index < 0 or index >= len(results or []):
         return None, None, "请点击一张图库图片进行预览。"
     row = results[index]
-    candidate = {key: row.get(key, "") for key in ("id", "kind", "title", "url", "detail") }
+    candidate = {key: row[key] for key in ("id", "kind", "title", "url")}
     return candidate, row["url"], (
         f"正在预览：**{candidate['kind']} · {candidate['title']}**。"
         "这张图尚未加入上传图片框；确认后才会添加。"
