@@ -128,6 +128,30 @@ for model in client.models.list().data:
 curl -sS "$GATEWAY_BASE_URL/models/detail"
 ```
 
+## 图片编辑：混合 Base64 Data URL 与 HTTPS 参考图
+
+`POST /v1/images/edits`（也支持 `/v1/images/edit`）的 JSON `image`、`images`、`image_urls` 可以接收 1–4 张参考图，**按传入顺序**处理。每项既可以是公开 HTTPS 图片 URL，也可以是 `data:image/png;base64,...`、`data:image/jpeg;base64,...`、`data:image/webp;base64,...`。每张图片最大 10 MB，格式仅 PNG/JPEG/WebP，分辨率最多 16777216 像素。Base64 输入不保存在历史 JSON 中，服务端仅保存解码后的参考图。
+
+适用于 AI Pose Gallery：第一张本地头像来自浏览器 `FileReader.readAsDataURL()`，图 2 和图 3 是图库 HTTPS 参考图。
+
+```json
+{
+  "model": "qwen-image-2.1",
+  "prompt": "参考图1的人物、图2服装与图3姿势生成写实照片",
+  "images": [
+    {"image_url": "data:image/png;base64,<这里填真实Base64数据>"},
+    {"image_url": "https://ga.du-ai.top/img/costume/SUM-0007.webp"},
+    {"image_url": "https://ga.du-ai.top/img/upper80v2_P034_front.png"}
+  ],
+  "input_fidelity": "high",
+  "output_format": "png",
+  "quality": "high",
+  "size": "1024x1536"
+}
+```
+
+`input_fidelity` 只用于兼容请求，当前 Qwen 上游 API 不支持该参数，网关不会将其发送上游；`quality: "high"` 会映射到 Qwen 的 `"quality"` 模式。不要将 Data URL 当作网络地址下载，不要在客户端错误日志中打印完整 Base64。
+
 ## 临时 URL 图片返回（默认）
 
 现在 **`response_format=url` 是默认值**。Qwen Image 2.1 文生图、图片编辑和 Z-Image-Turbo 文生图均支持返回临时 URL。图片先由网关保存为 PNG，再通过本网关的 `GET /v1/files/{id}.png` 公开下载，不暴露原始上游 Space 文件路径。
