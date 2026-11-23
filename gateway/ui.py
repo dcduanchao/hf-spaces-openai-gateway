@@ -221,7 +221,7 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
                 images.append((image.copy(), f"第 {index + 1} 张 · {model_id}"))
         except (ValueError, OSError):
             raise gr.Error("API 返回的图片无法预览，请检查生成结果。") from None
-    return images, f"已通过 OpenAI API 生成 {len(images)} 张图片\\n耗时 {time.monotonic() - started:.1f} 秒"
+    return images, f"已通过 OpenAI API 生成 {len(images)} 张图片\n耗时 {time.monotonic() - started:.1f} 秒"
 
 
 def create_ui():
