@@ -23,6 +23,7 @@ from .reference_gallery import (
 )
 from .reference_confirmation import preview_candidate, confirm_reference, clear_gallery_files
 from .recipe_prompt import build_edit_prompt, STYLES
+from .upstream_auth import token_tail
 
 SIZE_LABEL = lambda s: s.replace("x", " × ")
 logger = logging.getLogger(__name__)
@@ -191,6 +192,7 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
     # X-IP-Token is added by the HF Spaces edge. The adapter creates a nested
     # Gradio Client, so we must forward this identity to the upstream ZeroGPU.
     ip_token = request.headers.get("x-ip-token") if request and request.headers else None
+    logger.info("[hf-auth] source=studio model=%s hf_token=%s", model_id, token_tail(hf_token))
     # The UI uses only the token explicitly entered by the visitor. It does NOT
     # silently spend the server owner's UPSTREAM_HF_TOKEN quota.
     kwargs = {"model": model_id, "prompt": prompt, "size": size,
