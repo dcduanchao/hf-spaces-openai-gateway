@@ -1,7 +1,7 @@
 from __future__ import annotations
 import base64
 import os
-import secrets
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -35,14 +35,34 @@ async def error_handler(_, exc):
     return JSONResponse(status_code=exc.status_code, content={"error": {"type": "invalid_request_error", "code": "bad_request", "message": str(exc.detail)}})
 
 
-def authorize(authorization: str | None):
-    gateway_key = os.getenv("GATEWAY_API_KEY", "").strip()
-    if not gateway_key:
-        err(503, "gateway_unconfigured", "Set GATEWAY_API_KEY in Space Secrets")
-    provided = (authorization or "").removeprefix("Bearer ").strip()
-    if not secrets.compare_digest(provided, gateway_key):
-        err(401, "invalid_api_key", "Invalid gateway API key")
-    return os.getenv("UPSTREAM_HF_TOKEN", "").strip() or None
+def request_hf_token(authorization: str | None, x_hf_token: str | None) -> str | None:
+    """Optional per-request HF credential. Never fall back to the server owner's token."""
+    explicit = (x_hf_token or "").strip()
+    auth = (authorization or "").strip()
+    if auth.lower().startswith("bearer "):
+        candidate = auth[7:].strip()
+        if candidate.startswith("hf_"):
+            if explicit and explicit != candidate:
+                err(400, "conflicting_hf_tokens", "Provide HF Token in only one header")
+            explicit = candidate
+    if explicit and not re.fullmatch(r"hf_[A-Za-z0-9_]+", explicit):
+        err(400, "invalid_hf_token", "HF token must start with hf_; otherwise omit it for anonymous access")
+    return explicit or None
+
+
+def upstream_error_message(exc: Exception) -> tuple[int, str, str]:
+    """Return a small non-sensitive error and an explicit no-quota hint when recognized."""
+    raw = str(exc)
+    message = re.sub(r"hf_[A-Za-z0-9_]+", "[HF_TOKEN_REDACTED]", raw)
+    message = re.sub(r"Bearer\\s+[^\\s,;]+", "Bearer [REDACTED]", message, flags=re.I)
+    msg = message.lower()
+    if any(term in msg for term in ("quota", "zero gpu", "zerogpu", "gpu seconds", "daily limit", "rate limit", "too many requests", "429", "no gpu time")):
+        return (429, "upstream_quota_exceeded",
+                "Upstream ZeroGPU quota or rate limit exhausted. Retry later or provide your own HF Token via X-HF-Token.")
+    # Avoid returning upstream exception text, which can include private headers or URLs.
+    return (502, "upstream_failed",
+            "Upstream Space failed (" + type(exc).__name__ + "). Check Space status and its Container Logs.")
+
 
 
 def profile_for(model: str, mode: str):
@@ -72,28 +92,28 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None):
             data.append({"b64_json": base64.b64encode(png).decode("ascii")})
     except ValueError as ex:
         err(400, "invalid_parameters", str(ex))
-    except Exception:
-        err(502, "upstream_failed", "Upstream Space failed; check Space status, permissions and API schema")
+    except Exception as ex:
+        status, code, message = upstream_error_message(ex)
+        err(status, code, message)
     return {"created": int(time.time()), "data": data, "model": p.id}
 
 @app.get("/health")
 def health():
-    return {"ok": True, "configured": bool(os.getenv("GATEWAY_API_KEY")), "models": len(load_profiles())}
+    return {"ok": True, "auth_required": False, "models": len(load_profiles())}
 
 @app.get("/v1/models")
-def models(authorization: str | None = Header(default=None)):
-    authorize(authorization)
+def models():
     return {"object": "list", "data": [{"id": p.id, "object": "model", "owned_by": p.space_id, "description": p.description, "modes": p.modes, "default_size": p.default_size, "sizes": p.allowed_sizes, "extra_parameters": {k: v.model_dump() for k, v in p.extras.items()}} for p in load_profiles().values()]}
 
 @app.post("/v1/images/generations")
-def generate(body: GenerateRequest, authorization: str | None = Header(default=None)):
-    token = authorize(authorization)
+def generate(body: GenerateRequest, authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
+    token = request_hf_token(authorization, x_hf_token)
     return produce(body.model_dump(exclude_none=True, exclude_unset=False), token)
 
 @app.post("/v1/images/edits")
-async def edit(model: str = Form(...), prompt: str = Form(...), image: list[UploadFile] = File(...), size: str | None = Form(None), n: int = Form(1), response_format: str = Form("b64_json"), seed: int = Form(-1), extra_body: str = Form("{}"), authorization: str | None = Header(default=None)):
+async def edit(model: str = Form(...), prompt: str = Form(...), image: list[UploadFile] = File(...), size: str | None = Form(None), n: int = Form(1), response_format: str = Form("b64_json"), seed: int = Form(-1), extra_body: str = Form("{}"), authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
     import json
-    token = authorize(authorization)
+    token = request_hf_token(authorization, x_hf_token)
     profile = profile_for(model, "edits")
     if profile.adapter != "qwen_image" and not ("images" in profile.bindings or "image" in profile.bindings):
         err(400, "unsupported_edit", "Model has no image input binding")
