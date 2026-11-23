@@ -39,6 +39,36 @@ export HF_TOKEN="hf_替换为自己的Token"
 
 **安全：** 不再读取 `GATEWAY_API_KEY` 或 `UPSTREAM_HF_TOKEN`；就算服务端仍保存这些 Secrets，也不会用它们自动代用户调用第三方 Space。第三方 Space 的运营方仍可能接触你主动提供给它的 HF Token，因此只使用最低权限、独立的访问令牌。
 
+## 无痕浏览器 / ZeroGPU HF Token / API 认证
+
+无痕窗口不会继承 Hugging Face 站点的登录 Cookie。本项目不使用部署者自己的 HF Token 代替调用者扣费：**每个请求使用你明确提供的 HF Token**（没有 Token 就是匿名额度）。
+
+网页工作室打开 **「Hugging Face Token（无痕模式和 API 均可使用）」**，填写个人 `hf_...`，点击「验证 Token / 查询 ZeroGPU 可用时长」，验证成功后再点「开始生成」。Token 仅存在于当前 Gradio 会话的组件值中；无痕窗口关闭后需要重新填写，不写入历史 Bucket。
+
+**API 生成和编辑请求**都支持以下两种传法，推荐 `X-HF-Token`：
+
+```bash
+# 文生图
+curl -X POST "https://duan0320-hf-spaces-openai-gateway.hf.space/v1/images/generations" \
+  -H "Content-Type: application/json" \
+  -H "X-HF-Token: $HF_TOKEN" \
+  -d '{"model":"qwen-image-2.1","prompt":"一张街拍照片","size":"1024x1024"}'
+
+# 图片编辑（兼容 AI Pose Gallery 的 /edit 地址）
+curl -X POST "https://duan0320-hf-spaces-openai-gateway.hf.space/v1/images/edit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $HF_TOKEN" \
+  -d '{"model":"qwen-image-2.1","prompt":"让人物穿上图2的衣服","images":[{"image_url":"https://example.com/public/person.png"},{"image_url":"https://example.com/public/outfit.png"}],"size":"1024x1536"}'
+
+# 验证当前 Token 和个人 ZeroGPU 剩余额度
+curl -H "X-HF-Token: $HF_TOKEN" \
+  "https://duan0320-hf-spaces-openai-gateway.hf.space/v1/hf/status"
+```
+
+`HF_TOKEN` 应是从 [Hugging Face Access Tokens](https://huggingface.co/settings/tokens) 创建的个人令牌；不要把 Token 放进 URL、Prompt、JSON 图片字段或公开的浏览器前端源码中。对自部署的 AI Pose Gallery 前端，如果由服务器代为请求网关，建议在服务端添加请求头；如果纯浏览器直连，则令牌会暴露给浏览器使用者，应采用用户自行输入 Token 的方式，而不是在前端硬编码所有者 Token。
+
+当上游返回 `You have exceeded your ZeroGPU runs limit`，API 会返回 **HTTP 429 / `upstream_quota_exceeded`**。有效 Token 只是切换为对应用户的额度，**并不保证额度足够**。先查余额与重置时间，额度耗尽需要等待重置或使用平台支持的额外额度。
+
 ## 2. 当前支持的模型
 
 | 模型 ID | 上游 | 文生图 | 图片编辑 | 模型专属参数 |
