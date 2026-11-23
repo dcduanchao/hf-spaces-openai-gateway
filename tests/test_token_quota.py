@@ -1,7 +1,7 @@
 """Token quota unit tests; no real HF credentials or network calls."""
 import unittest
 from unittest.mock import patch, MagicMock
-from gateway.token_quota import format_seconds, format_date, parse_quota, token_quota_info
+from gateway.token_quota import format_seconds, format_date, parse_quota, token_quota_info, quota_status
 
 
 class TokenQuotaTests(unittest.TestCase):
@@ -15,6 +15,27 @@ class TokenQuotaTests(unittest.TestCase):
     def test_invalid_quota(self):
         with self.assertRaises(ValueError):
             parse_quota({"current": -5, "base": 30})
+
+    def test_structured_anonymous(self):
+        value = quota_status(None)
+        self.assertFalse(value["authenticated"])
+        self.assertIsNone(value["remaining_seconds"])
+        self.assertIsNone(value["resets_at"])
+        self.assertTrue(value["checked_at"].endswith("Z"))
+
+    @patch("gateway.token_quota.httpx.get")
+    @patch("gateway.token_quota.HfApi")
+    def test_structured_quota(self, api, get):
+        api.return_value.whoami.return_value = {"name": "demo"}
+        response = MagicMock()
+        response.json.return_value = {"current": 120.0, "base": 360.0, "resetsAt": "2026-11-24T00:00:00Z"}
+        get.return_value = response
+        value = quota_status("hf_Example123")
+        self.assertTrue(value["authenticated"])
+        self.assertEqual(value["remaining_seconds"], 120)
+        self.assertEqual(value["used_seconds"], 240)
+        self.assertEqual(value["resets_at"], "2026-11-24T00:00:00Z")
+        self.assertNotIn("hf_Example123", str(value))
 
     def test_empty_token(self):
         self.assertIn("匿名模式", token_quota_info(""))
