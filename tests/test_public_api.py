@@ -144,6 +144,28 @@ class PublicApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["data"][0]["b64_json"], "YWJj")
 
+    def test_runs_limit_maps_to_429_without_secrets(self):
+        status, code, message = upstream_error_message(
+            RuntimeError("AppError: You have exceeded your ZeroGPU runs limit. Authenticate with hf_PRIVATE123"))
+        self.assertEqual((status, code), (429, "upstream_quota_exceeded"))
+        self.assertNotIn("hf_PRIVATE123", message)
+
+    def test_api_runs_limit_response(self):
+        with patch("gateway.main.invoke",
+                   side_effect=RuntimeError("You have exceeded your ZeroGPU runs limit")):
+            res = self.client.post("/v1/images/generations",
+                headers={"X-HF-Token": "hf_CALLER123"},
+                json={"model": "z-image-turbo", "prompt": "a cat"})
+        self.assertEqual(res.status_code, 429, res.text)
+        self.assertEqual(res.json()["error"]["code"], "upstream_quota_exceeded")
+
+    def test_ui_incognito_error_hint(self):
+        from gateway.ui import zerogpu_limit_error
+        error = RuntimeError("AppError: You have exceeded your ZeroGPU runs limit")
+        self.assertIn("无痕模式", zerogpu_limit_error(error, False))
+        self.assertIn("当前所填", zerogpu_limit_error(error, True))
+        self.assertIsNone(zerogpu_limit_error(RuntimeError("Invalid size"), True))
+
     def test_generation_can_use_per_request_token(self):
         with patch("gateway.main.invoke", return_value=b"abc") as fake:
             response = self.client.post("/v1/images/generations", headers={"X-HF-Token": "hf_TESTTOKEN"},
