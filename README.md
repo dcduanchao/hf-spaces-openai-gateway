@@ -18,6 +18,10 @@ pinned: false
 
 📖 **OpenAI Images API 完整调用案例（Python SDK / cURL，按模型划分）：[docs/OPENAI_API.md](docs/OPENAI_API.md)**
 
+📚 **图片生成历史持久化和管理后台：[docs/HISTORY_ADMIN.md](docs/HISTORY_ADMIN.md)** · [打开管理员页面](https://duan0320-hf-spaces-openai-gateway.hf.space/admin/)（需独立的 `ADMIN_API_KEY`）
+
+历史记录及 PNG 图像保存到私有 HF Storage Bucket `duan0320/image-history`，自动部署会尝试挂载到 `/data`。若 Bucket 未挂载，生成请求返回 503，避免历史数据写进易丢失的本地盘。所有访客的 Prompt、生成图片和编辑参考图都将被持久保存，请公开隐私与保留说明；HF Token 不入库。
+
 ## 接口
 
 - `GET /health`
