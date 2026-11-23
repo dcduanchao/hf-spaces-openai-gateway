@@ -231,14 +231,22 @@ def _edit_json_images(payload: dict) -> list[tuple[str, str]]:
     if not provided:
         err(400, "invalid_image_count", "1-4 images required")
     raw = payload[provided[0]]
-    values = [raw] if isinstance(raw, str) else raw
+    values = [raw] if isinstance(raw, (str, dict)) else raw
     if not isinstance(values, list) or not 1 <= len(values) <= 4:
         err(400, "invalid_image_count", "1-4 image URLs required")
-    if not all(isinstance(url, str) for url in values):
-        err(400, "invalid_image", "JSON image inputs must be public HTTPS URL strings")
-    return [("url", url) for url in values]
+    urls = []
+    for item in values:
+        if isinstance(item, dict):
+            if set(item) != {"image_url"}:
+                err(400, "invalid_image", "Each image object must contain only image_url")
+            item = item["image_url"]
+        if not isinstance(item, str) or not item.strip():
+            err(400, "invalid_image", "JSON image inputs must be public HTTPS URL strings")
+        urls.append(("url", item))
+    return urls
 
 
+@app.post("/v1/images/edit", include_in_schema=False)
 @app.post("/v1/images/edits")
 async def edit(request: Request, authorization: str | None = Header(default=None),
                x_hf_token: str | None = Header(default=None)):
@@ -268,6 +276,18 @@ async def edit(request: Request, authorization: str | None = Header(default=None
                         err(400, "invalid_parameters", f"duplicate extra parameter: {k}")
                     extras[k] = v
             fields = {k: raw[k] for k in ("model", "prompt", "size", "n", "seed", "response_format") if k in raw}
+            # AI Pose Gallery sends these OpenAI-like options at top level.
+            # The HF Gradio adapter has no input_fidelity setting: accept the
+            # hint, but do not falsely forward it to the upstream model.
+            fidelity = extras.pop("input_fidelity", None)
+            if fidelity is not None and fidelity not in ("high", "low"):
+                err(400, "invalid_parameters", "input_fidelity must be high or low")
+            output_format = extras.pop("output_format", "png")
+            if output_format != "png":
+                err(400, "invalid_parameters", "Only output_format=png is supported")
+            quality = extras.get("quality")
+            if quality in ("high", "medium", "low"):
+                extras["quality"] = "quality" if quality == "high" else "speed"
             fields["extra_body"] = extras
         elif content_type.startswith("multipart/form-data"):
             form = await request.form()
