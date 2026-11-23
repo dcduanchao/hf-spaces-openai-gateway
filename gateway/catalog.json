@@ -47,7 +47,8 @@
           "default": true
         }
       },
-      "result_path": []
+      "result_path": [],
+      "display_name": "Qwen Image 2.1"
     },
     {
       "id": "z-image-turbo",
@@ -82,7 +83,8 @@
       },
       "result_path": [
         0
-      ]
+      ],
+      "display_name": "Z-Image-Turbo"
     }
   ]
 }
