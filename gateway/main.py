@@ -8,7 +8,8 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
-from fastapi import FastAPI, Header, HTTPException, UploadFile, Request
+from fastapi import FastAPI, Header, HTTPException, Request
+from starlette.datastructures import UploadFile
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from pydantic import BaseModel, Field, ConfigDict
 from .models import load_profiles
