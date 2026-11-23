@@ -9,11 +9,12 @@ import time
 from pathlib import Path
 from typing import Any
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, Request
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from pydantic import BaseModel, Field, ConfigDict
 from .models import load_profiles
 from .adapter import invoke, parse_size
 from .token_quota import quota_status
+from .temp_images import get_temp_image, save_temp_image, public_image_url
 
 app = FastAPI(title="HF Spaces OpenAI Image Gateway", version="0.1.0")
 
@@ -46,7 +47,7 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
     size: str | None = None
     n: int = Field(default=1, ge=1, le=4)
-    response_format: str = "b64_json"
+    response_format: str = "url"
     seed: int = -1
     extra_body: dict[str, Any] = Field(default_factory=dict)
 
@@ -105,8 +106,9 @@ def profile_for(model: str, mode: str):
 
 def produce(payload: dict, token: str | None, mode="generations", paths=None):
     p = profile_for(payload["model"], mode)
-    if payload.get("response_format", "b64_json") != "b64_json":
-        err(400, "unsupported_format", "Only b64_json is supported in this stateless version")
+    response_format = payload.get("response_format", "url")
+    if response_format not in ("url", "b64_json"):
+        err(400, "unsupported_format", "Supported response_format values: url, b64_json")
     try:
         parse_size(payload.get("size") or p.default_size, p)
         data = []
@@ -115,7 +117,10 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None):
             if item.get("seed", -1) >= 0:
                 item["seed"] += i
             png = invoke(p, item, token, image_paths=paths)
-            data.append({"b64_json": base64.b64encode(png).decode("ascii")})
+            if response_format == "url":
+                data.append({"url": public_image_url(save_temp_image(png))})
+            else:
+                data.append({"b64_json": base64.b64encode(png).decode("ascii")})
     except ValueError as ex:
         err(400, "invalid_parameters", str(ex))
     except Exception as ex:
@@ -170,13 +175,23 @@ def hf_status(authorization: str | None = Header(default=None), x_hf_token: str 
         err(502, "hf_quota_unavailable", "HF quota unavailable; ensure Billing read permission and retry later")
 
 
+@app.get("/v1/files/{image_name}")
+def serve_temp_image(image_name: str):
+    path = get_temp_image(image_name)
+    if path is None:
+        err(404, "image_not_found", "Temporary image missing or expired")
+    return FileResponse(path, media_type="image/png", filename=image_name,
+                        content_disposition_type="inline",
+                        headers={"Cache-Control": "private, max-age=60", "X-Content-Type-Options": "nosniff"})
+
+
 @app.post("/v1/images/generations")
 def generate(body: GenerateRequest, authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
     token = request_hf_token(authorization, x_hf_token)
     return produce(body.model_dump(exclude_none=True, exclude_unset=False), token)
 
 @app.post("/v1/images/edits")
-async def edit(model: str = Form(...), prompt: str = Form(...), image: list[UploadFile] = File(...), size: str | None = Form(None), n: int = Form(1), response_format: str = Form("b64_json"), seed: int = Form(-1), extra_body: str = Form("{}"), authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
+async def edit(model: str = Form(...), prompt: str = Form(...), image: list[UploadFile] = File(...), size: str | None = Form(None), n: int = Form(1), response_format: str = Form("url"), seed: int = Form(-1), extra_body: str = Form("{}"), authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
     import json
     token = request_hf_token(authorization, x_hf_token)
     profile = profile_for(model, "edits")
