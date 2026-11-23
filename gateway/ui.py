@@ -17,6 +17,7 @@ from PIL import Image
 from .adapter import invoke
 from .models import load_profiles
 from .token_quota import token_quota_info
+from . import history
 
 SIZE_LABEL = lambda s: s.replace("x", " × ")
 logger = logging.getLogger(__name__)
@@ -111,6 +112,14 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
     images = []
     messages = []
     t0 = time.monotonic()
+    try:
+        record_id = history.new_record(
+            model_id, "edits" if mode == "图片编辑" else "generations",
+            prompt, {"size": size, "n": int(count), "seed": int(seed if seed is not None else -1),
+                     "extra_body": extra, "source": "gradio_ui"},
+        )
+    except (RuntimeError, OSError) as exc:
+        raise gr.Error("历史 Bucket 未就绪，请管理员检查 /data 挂载和标记文件。") from None
     with tempfile.TemporaryDirectory(prefix="hf_studio_") as folder:
         input_paths = []
         if mode == "图片编辑":
@@ -124,20 +133,26 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
                     target = Path(folder) / f"input_{index}.png"
                     im.convert("RGB").save(target)
                 input_paths.append(str(target))
+                history.store_image(record_id, target.read_bytes(), input_image=True)
         try:
             for index in range(int(count)):
                 req = dict(kwargs)
                 if req["seed"] >= 0:
                     req["seed"] += index
                 png = invoke(p, req, hf_token, image_paths=input_paths or None)
+                history.store_image(record_id, png)
                 images.append((Image.open(io.BytesIO(png)).copy(), f"第 {index + 1} 张 · {model_id}"))
                 messages.append(f"第 {index + 1} 张生成成功")
         except Exception as e:
             diagnostic = safe_upstream_error(e)
             logger.error("Qwen upstream failure model=%s error=%s", model_id, diagnostic)
             if not images:
+                history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000), "upstream_failed")
                 raise gr.Error(f"上游调用失败：{diagnostic}。请查看 Space Logs。") from None
             messages.append(f"部分图片生成成功，后续失败：{diagnostic}")
+            history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000), "partial_failure")
+        else:
+            history.finish_record(record_id, "success", round((time.monotonic() - t0) * 1000))
         return images, "\n".join(messages) + f"\n耗时 {time.monotonic()-t0:.1f} 秒"
 
 def create_ui():
