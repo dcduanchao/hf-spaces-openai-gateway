@@ -22,7 +22,7 @@ def png():
 
 class ViggleContractTests(unittest.TestCase):
     def setUp(self):
-        self.profile = load_profiles()["qwen-image-2.1-viggle-turbo"]
+        self.profile = load_profiles()["qwen-image-2.1-6"]
 
     def test_catalog_preserves_existing_models(self):
         profiles = load_profiles()
@@ -121,7 +121,7 @@ class ViggleContractTests(unittest.TestCase):
                 with patch("gateway.main.invoke", return_value=png()) as invoke:
                     res = TestClient(app).post("/v1/images/edits",
                         headers={"X-HF-Token":"hf_TEST123"},
-                        data={"model":"qwen-image-2.1-viggle-turbo", "prompt":"portrait", "size":"1024x1536", "response_format":"b64_json"},
+                        data={"model":"qwen-image-2.1-6", "prompt":"portrait", "size":"1024x1536", "response_format":"b64_json"},
                         files={"image":("ref.png",png(),"image/png")})
                 self.assertEqual(res.status_code,200,res.text)
                 self.assertEqual(base64.b64decode(res.json()["data"][0]["b64_json"]),png())
