@@ -13,11 +13,19 @@ from .upstream_logging import predict_logged
 
 
 def parse_size(size: str, profile: Profile) -> tuple[int, int]:
-    if size not in profile.allowed_sizes:
-        raise ValueError(f"unsupported size {size}; allowed: {profile.allowed_sizes}")
-    width, height = map(int, size.split("x"))
-    if width <= 0 or height <= 0 or width * height > 16_777_216:
-        raise ValueError("invalid size")
+    """Presets are suggestions, not an exhaustive allowlist.
+
+    Custom width/height values are accepted within safe bounds. Upstream
+    Spaces may impose tighter limits and can reject custom dimensions.
+    """
+    import re
+    if not isinstance(size, str) or not re.fullmatch(r"[1-9][0-9]{1,4}[xX][1-9][0-9]{1,4}", size.strip()):
+        raise ValueError("size must be WIDTHxHEIGHT (e.g. 1024x1536)")
+    width, height = map(int, re.split("[xX]", size.strip()))
+    if not (256 <= width <= 4096 and 256 <= height <= 4096):
+        raise ValueError("size width and height must be between 256 and 4096")
+    if width * height > 16_777_216:
+        raise ValueError("size exceeds 16777216 pixels")
     return width, height
 
 
