@@ -117,7 +117,7 @@
           "target": "steps",
           "kind": "int",
           "default": 6,
-          "min": 1,
+          "min": 3,
           "max": 9
         }
       },
