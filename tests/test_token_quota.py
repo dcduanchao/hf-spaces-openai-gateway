@@ -1,7 +1,7 @@
 """Token quota unit tests; no real HF credentials or network calls."""
 import unittest
 from unittest.mock import patch, MagicMock
-from gateway.token_quota import format_seconds, format_date, parse_quota, token_quota_info, quota_status
+from gateway.token_quota import format_seconds, format_date, parse_quota, token_quota_info, quota_status, quota_tier_hint
 
 
 class TokenQuotaTests(unittest.TestCase):
@@ -36,6 +36,11 @@ class TokenQuotaTests(unittest.TestCase):
         self.assertEqual(value["used_seconds"], 240)
         self.assertEqual(value["resets_at"], "2026-11-24T00:00:00Z")
         self.assertNotIn("hf_Example123", str(value))
+
+    def test_free_tier_warning(self):
+        self.assertIn("5 分钟", quota_tier_hint(300))
+        self.assertIn("Pro", quota_tier_hint(300))
+        self.assertEqual(quota_tier_hint(2400), "")
 
     def test_empty_token(self):
         self.assertIn("匿名模式", token_quota_info(""))
