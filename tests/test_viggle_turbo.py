@@ -98,6 +98,18 @@ class ViggleContractTests(unittest.TestCase):
         self.assertEqual(args[9], "v0.3")
         client_class.return_value.close.assert_called_once()
 
+    def test_gradio_client_valueerror_is_upstream_not_input_validation(self):
+        with patch("gateway.viggle_turbo.Client") as client_class:
+            client_class.return_value.predict.side_effect = ValueError("possible hf_SECRET or prompt")
+            with self.assertRaisesRegex(RuntimeError, "upstream client rejected"):
+                run(self.profile, {"prompt": "cat"}, "hf_TEST123")
+        client_class.return_value.close.assert_called_once()
+
+    def test_gradio_client_init_valueerror_is_upstream(self):
+        with patch("gateway.viggle_turbo.Client", side_effect=ValueError("client schema changed")):
+            with self.assertRaisesRegex(RuntimeError, "initialization rejected"):
+                run(self.profile, {"prompt": "cat"}, "hf_TEST123")
+
     def test_real_image_edit_api_uses_viggle_and_bucket(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
