@@ -22,6 +22,7 @@ from .reference_gallery import (
     categories as reference_categories, search_references, gallery_items,
 )
 from .reference_confirmation import preview_candidate, confirm_reference, clear_gallery_files
+from .recipe_prompt import build_edit_prompt, STYLES
 
 SIZE_LABEL = lambda s: s.replace("x", " × ")
 logger = logging.getLogger(__name__)
@@ -126,6 +127,21 @@ def preview_uploaded_images(files):
     return items
 
 
+def sync_edit_prompt(mode, files, confirmed, style, auto_enabled):
+    """Only refresh the draft until the visitor edits it manually."""
+    if mode != "图片编辑" or not auto_enabled:
+        return gr.skip()
+    generated = build_edit_prompt(files, confirmed, style)
+    return generated if generated else gr.skip()
+
+
+def reset_edit_prompt(mode, files, confirmed, style):
+    if mode != "图片编辑":
+        return gr.skip(), True
+    generated = build_edit_prompt(files, confirmed, style)
+    return (generated if generated else gr.skip()), True
+
+
 def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json):
     p = profiles().get(model_id)
     if not p:
@@ -210,8 +226,6 @@ def create_ui():
         with gr.Row():
             with gr.Column(scale=5):
                 mode = gr.Radio(["文生图", "图片编辑"], value="文生图", label="生成模式")
-                prompt = gr.Textbox(label="图片描述", lines=5, max_lines=8,
-                    placeholder="描述你想生成的画面，或者说明如何修改原图……")
                 with gr.Column(visible=False) as upload_panel:
                     source = gr.File(file_count="multiple", type="filepath", file_types=["image"],
                         label="上传图片 / 已确认图库参考图（最多 4 张）")
@@ -239,6 +253,14 @@ def create_ui():
                     pose_hint = gr.Markdown("点击图库图片仅预览；点击「确认添加到上传图片」后才会作为编辑素材。最多 4 张。")
                     confirm_button = gr.Button("确认添加到上传图片", variant="primary", size="sm")
                     pose_clear = gr.Button("清除已确认的图库图片", size="sm")
+                with gr.Row():
+                    prompt_style = gr.Dropdown(choices=list(STYLES), value="写实人像写真",
+                        label="画风预设（图片编辑）", visible=False)
+                    reset_prompt = gr.Button("重置组合提示词", visible=False, size="sm")
+                prompt = gr.Textbox(label="提示词（Prompt）", lines=8, max_lines=16,
+                    show_copy_button=True,
+                    placeholder="文生图：输入画面描述；图片编辑：确认添加参考图后自动生成，可继续修改……")
+                automatic_prompt = gr.State(True)
                 with gr.Row():
                     model = gr.Dropdown(choices=opts, value=default_id,
                         label="当前可用模型", interactive=True)
@@ -271,6 +293,9 @@ def create_ui():
                 reference_preview_for_mode, inputs=[mode, model, reference_kind, confirmed_files],
                 outputs=[pose_category, pose_preview, pose_results, pose_hint],
                 api_visibility="private")
+        mode.change(lambda editing: (gr.update(visible=editing == "图片编辑"),
+                                     gr.update(visible=editing == "图片编辑")),
+            inputs=[mode], outputs=[prompt_style, reset_prompt], api_visibility="private")
         reference_kind.change(default_reference_preview, inputs=[reference_kind, confirmed_files],
             outputs=[pose_category, pose_preview, pose_results, pose_hint], api_visibility="private")
 
@@ -312,12 +337,25 @@ def create_ui():
             outputs=[source, confirmed_files, pose_hint], api_visibility="private")
         source.change(preview_uploaded_images, inputs=[source],
             outputs=[upload_preview], api_visibility="private")
+        source.change(sync_edit_prompt, inputs=[mode, source, confirmed_files, prompt_style, automatic_prompt],
+            outputs=[prompt], api_visibility="private")
+        confirmed_files.change(sync_edit_prompt,
+            inputs=[mode, source, confirmed_files, prompt_style, automatic_prompt],
+            outputs=[prompt], api_visibility="private")
+        prompt_style.change(sync_edit_prompt,
+            inputs=[mode, source, confirmed_files, prompt_style, automatic_prompt],
+            outputs=[prompt], api_visibility="private")
+        prompt.input(lambda value: False, inputs=[prompt], outputs=[automatic_prompt],
+            api_visibility="private")
+        reset_prompt.click(reset_edit_prompt,
+            inputs=[mode, source, confirmed_files, prompt_style],
+            outputs=[prompt, automatic_prompt], api_visibility="private")
         refresh.click(refresh_models, outputs=[model, info], api_visibility="private")
         run.click(generate,
             inputs=[mode, model, prompt, source, size, count, seed, token, extra],
             outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
         if default_id:
             demo.load(selected_model, inputs=[model],
-                outputs=[size, model_info, mode, source, edit_warning, pose_panel], api_visibility="private")
+                outputs=[size, model_info, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
     demo.queue(default_concurrency_limit=2)
     return demo
