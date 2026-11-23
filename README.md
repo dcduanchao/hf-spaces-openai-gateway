@@ -14,7 +14,7 @@ pinned: false
 
 ## 当前状态
 
-此仓库是可部署的框架，不是开箱即用的 Qwen 适配器。`gateway/catalog.json` 中 Qwen 示例默认 `enabled=false`，必须先读取目标 Space 的实时 API Schema，填写参数后启用。上游 Space 的 API 随时可能改变、排队、睡眠或限流。
+已接入 `qwen-image-2.1`（文生图、图片编辑）和 `z-image-turbo`（文生图）。模型列表及 API 请求无需网关密钥。生成时可不提供 HF Token（匿名使用上游公开 ZeroGPU），也可由调用者在 `X-HF-Token: hf_...` 请求头中提供自己的 Token。匿名额度不足、上游限流时返回错误，不会使用网关所有者的 HF Token 兜底。
 
 📖 **OpenAI Images API 完整调用案例（Python SDK / cURL，按模型划分）：[docs/OPENAI_API.md](docs/OPENAI_API.md)**
 
@@ -32,9 +32,7 @@ pinned: false
 
 ```bash
 pip install -r requirements.txt
-export GATEWAY_API_KEY='your-strong-gateway-secret'
-# Optional, for private Spaces or authenticated ZeroGPU calls:
-export UPSTREAM_HF_TOKEN='hf_...'
+# API 无需配置 GATEWAY_API_KEY；可由请求者提供 X-HF-Token
 uvicorn gateway.main:app --host 0.0.0.0 --port 7860
 ```
 
@@ -84,7 +82,7 @@ python inspect_space.py duan0320/Qwen-Image-2.1
 
 ```python
 from openai import OpenAI
-client = OpenAI(base_url="http://localhost:7860/v1", api_key="your-strong-gateway-secret")
+client = OpenAI(base_url="http://localhost:7860/v1", api_key="anonymous")
 response = client.images.generate(
     model="example-model", prompt="A cat at a sunny window", size="1024x1024",
     response_format="b64_json", extra_body={"guidance_scale": 4.0, "steps": 30}
@@ -96,12 +94,12 @@ print(len(response.data[0].b64_json))
 
 ## Hugging Face Docker Space 部署
 
-1. 创建 HF Access Token，且有创建、写入 Space 权限。
-2. 配置 `GATEWAY_API_KEY` 和（可选）`UPSTREAM_HF_TOKEN` 为 Space **Secrets**，不可提交在 Git 中。
-3. 运行 `python deploy_hf.py username/space-name`，脚本读取环境变量 `HF_TOKEN`。
+1. 创建用于部署的 HF Access Token（写入 Space 权限），在 GitHub Actions Secret 中设置 `HF_TOKEN`。
+2. **不需要**为调用接口设置 `GATEWAY_API_KEY` 或 `UPSTREAM_HF_TOKEN`；尤其不要将所有者 Token 放在公开服务中作为默认认证身份。
+3. 运行 `python deploy_hf.py username/space-name`，或者由 GitHub Actions 自动部署。
 4. 进入 Space 页面确认 Docker build 与 `/health`。
 
-**HF_TOKEN** 只供部署脚本使用，不会被代码写进 Hub。**UPSTREAM_HF_TOKEN** 是网关服务端代表自己的 HF 身份访问上游时使用的 Token，**不会使用外部请求者的 HF Token**。高并发下建议部署访问控制、速率限制及配额系统；默认版本仅支持单一网关密钥，不适合直接公开为不受限的多租户计费服务。
+**HF_TOKEN** 只供部署脚本使用，不会被代码写进 Hub。**UPSTREAM_HF_TOKEN** 是网关服务端代表自己的 HF 身份访问上游时使用的 Token，**不会使用外部请求者的 HF Token**。公开接口没有网关鉴权；请注意滥用风险。匿名调用受到上游 Space 的 ZeroGPU 配额和限流限制，提供个人 HF Token 的用户自行承担其账号额度。生产部署建议增加独立限流。
 
 ## GitHub
 
