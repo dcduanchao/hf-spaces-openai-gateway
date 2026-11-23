@@ -10,6 +10,7 @@ on:
       - "requirements.txt"
       - "README.md"
       - "deploy_hf.py"
+      - "mount_history_bucket.py"
       - "inspect_space.py"
       - ".github/workflows/deploy-hf-space.yml"
 
@@ -45,6 +46,9 @@ jobs:
 
       - name: Create or update Docker Space
         run: python deploy_hf.py "$HF_SPACE_ID"
+
+      - name: Mount private history bucket
+        run: python mount_history_bucket.py
 
       - name: Deployment URL
         run: echo "https://huggingface.co/spaces/$HF_SPACE_ID"
