@@ -80,7 +80,11 @@ def build_args(profile, payload, image_paths=None):
 
 def run(profile, payload, token, image_paths=None, ip_token=None):
     args = build_args(profile, payload, image_paths)
-    client = Client(profile.space_id, **client_kwargs(token, ip_token))
+    try:
+        client = Client(profile.space_id, **client_kwargs(token, ip_token))
+    except ValueError:
+        logger.error("[hf-upstream] viggle_client_init_validation_failure")
+        raise RuntimeError("Viggle Turbo upstream client initialization rejected request") from None
     try:
         # predict_logged assumes named parameters. Viggle requires positional
         # parameters, so log only non-sensitive operational metadata.
