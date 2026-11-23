@@ -12,6 +12,7 @@ import logging
 import secrets
 from gradio_client import Client, handle_file
 from .models import validate_extra
+from .upstream_logging import predict_logged
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def run(profile, payload, token, image_paths=None):
     client = Client(profile.space_id, token=token or False, verbose=False)
     try:
         logger.info("Qwen call /prepare_request (seed nonnegative; %d image(s))", len(prepare["input_images"]))
-        prepared = client.predict(api_name="/prepare_request", **prepare)
+        prepared = predict_logged(client, space_id=profile.space_id, api_name="/prepare_request", kwargs=prepare)
         # The documented response is exactly [result_image, effective_seed, rewritten_prompt].
         if not isinstance(prepared, (list, tuple)) or len(prepared) != 3:
             raise ValueError("上游 /prepare_request 结果格式不符合 API 文档：应返回 3 个元素")
@@ -103,7 +104,7 @@ def run(profile, payload, token, image_paths=None):
             raise ValueError("上游 /prepare_request 返回了无效 seed")
         generate["seed"] = int(effective_seed)
         logger.info("Qwen call /generate_request")
-        result = client.predict(api_name="/generate_request", **generate)
+        result = predict_logged(client, space_id=profile.space_id, api_name="/generate_request", kwargs=generate)
         # /generate_request returns a list of one filepath.
         if isinstance(result, (list, tuple)) and len(result) != 1:
             raise ValueError("上游 /generate_request 结果格式不符合 API 文档：应返回 1 个元素")

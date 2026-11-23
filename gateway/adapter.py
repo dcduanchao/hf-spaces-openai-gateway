@@ -9,6 +9,7 @@ import httpx
 from gradio_client import Client, handle_file
 from PIL import Image
 from .models import Profile, validate_extra
+from .upstream_logging import predict_logged
 
 
 def parse_size(size: str, profile: Profile) -> tuple[int, int]:
@@ -118,7 +119,7 @@ def invoke(profile: Profile, payload: dict, token: str | None, image_paths=None)
     kwargs = make_kwargs(profile, payload, image_paths)
     client = Client(profile.space_id, token=token or False, verbose=False)
     try:
-        result = client.predict(api_name=profile.api_name, **kwargs)
+        result = predict_logged(client, space_id=profile.space_id, api_name=profile.api_name, kwargs=kwargs)
         return result_bytes(select_result(result, profile.result_path), profile)
     finally:
         client.close()
