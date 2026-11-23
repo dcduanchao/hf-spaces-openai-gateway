@@ -16,6 +16,8 @@ pinned: false
 
 此仓库是可部署的框架，不是开箱即用的 Qwen 适配器。`gateway/catalog.json` 中 Qwen 示例默认 `enabled=false`，必须先读取目标 Space 的实时 API Schema，填写参数后启用。上游 Space 的 API 随时可能改变、排队、睡眠或限流。
 
+📖 **OpenAI Images API 完整调用案例（Python SDK / cURL，按模型划分）：[docs/OPENAI_API.md](docs/OPENAI_API.md)**
+
 ## 接口
 
 - `GET /health`
