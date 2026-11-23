@@ -141,7 +141,7 @@ class RemoteValidationTests(unittest.TestCase):
                 _validate_url("https://example.org/a.png")
 
     def test_png_validation(self):
-        self.assertTrue(validate_png_bytes(tiny_png()).startswith(b"\\x89PNG"))
+        self.assertTrue(validate_png_bytes(tiny_png()).startswith(bytes([137, 80, 78, 71])))
 
 
 if __name__ == "__main__":
