@@ -88,9 +88,17 @@ def run(profile, payload, token, image_paths=None, ip_token=None):
             "[hf-upstream] viggle space=%s endpoint=%s references=%d size=%sx%s steps=%d version=v0.3",
             profile.space_id, profile.api_name, len(args[1]), args[7], args[8], args[6],
         )
-        result = client.predict(*args, api_name=profile.api_name)
-        if not isinstance(result, (list, tuple)) or len(result) != 3:
-            raise ValueError("Viggle Turbo /generate 应返回 3 个结果（图片、状态、Prompt）")
-        return result_bytes(select_result(result[0], []), profile)
+        try:
+            result = client.predict(*args, api_name=profile.api_name)
+            if not isinstance(result, (list, tuple)) or len(result) != 3:
+                raise RuntimeError("Viggle Turbo upstream result format invalid")
+            return result_bytes(select_result(result[0], []), profile)
+        except ValueError as exc:
+            # A gradio_client ValueError after request construction is an
+            # upstream protocol/preprocessing failure, not necessarily a
+            # caller's invalid input. Never expose upstream exception text:
+            # it can contain prompt text or private file metadata.
+            logger.error("[hf-upstream] viggle_client_validation_failure type=%s", type(exc).__name__)
+            raise RuntimeError("Viggle Turbo upstream client rejected prepared request") from None
     finally:
         client.close()
