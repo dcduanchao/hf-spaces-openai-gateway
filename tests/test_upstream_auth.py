@@ -5,7 +5,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from gateway.main import app
 from gateway import history
-from gateway.upstream_auth import client_kwargs, forward_headers
+from gateway.upstream_auth import client_kwargs, forward_headers, token_tail
 from gateway.models import load_profiles
 from gateway import z_image, qwen_image
 import tempfile
@@ -13,6 +13,41 @@ from pathlib import Path
 
 
 class IdentityForwardingTests(unittest.TestCase):
+    def test_log_only_masked_suffix_never_full_token(self):
+        secret = "hf_NOT_A_REAL_TOKEN_SECRET9876"
+        self.assertEqual(token_tail(secret), "****9876")
+        self.assertEqual(token_tail(None), "none")
+        with self.assertLogs("gateway.upstream_auth", level="INFO") as captured:
+            result = client_kwargs(secret, "edge-token")
+        text = "\\n".join(captured.output)
+        self.assertIn("****9876", text)
+        self.assertIn("auth_mode=hf_token", text)
+        self.assertNotIn(secret, text)
+        self.assertNotIn("edge-token", text)
+        self.assertNotIn("headers", result)
+
+    def test_studio_log_shows_only_token_suffix(self):
+        from gateway import ui
+        from types import SimpleNamespace
+        from io import BytesIO
+        from PIL import Image
+        buffer = BytesIO()
+        Image.new("RGB", (4, 4), "red").save(buffer, "PNG")
+        secret = "hf_NOT_A_REAL_TOKEN_SECRET9876"
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".history_bucket_ready").write_text("test")
+            with patch.object(history, "ROOT", root):
+                with patch("gateway.ui.invoke", return_value=buffer.getvalue()):
+                    with self.assertLogs("gateway.ui", level="INFO") as captured:
+                        ui.generate("文生图", "z-image-turbo", "cat", [],
+                                    "1024x1024", 1, -1, secret, "{}", "",
+                                    request=SimpleNamespace(headers={}))
+        text = "\\n".join(captured.output)
+        self.assertIn("source=studio", text)
+        self.assertIn("****9876", text)
+        self.assertNotIn(secret, text)
+
     def test_auth_kwargs_use_both_credentials(self):
         result = client_kwargs("hf_PROUSER123", "signed-edge-token")
         self.assertEqual(result["token"], "hf_PROUSER123")
