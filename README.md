@@ -23,9 +23,13 @@ pinned: false
 - `GET /health`
 - `GET /v1/models`：精简模型清单，字段为 `id`、`object`、`created`、`owned_by`、`type`、`display_name`
 - `GET /v1/models/detail`：原有完整模型清单，包含尺寸、模式、扩展参数
+- `GET /v1/hf/status`：可选 HF Token 身份验证、ZeroGPU 剩余额度、重置时间和查询时间
+- 所有 HTTP 请求记录 `[gateway-request]` 总耗时，并返回 `X-Request-Duration-Ms` Header
 - `POST /v1/images/generations`：JSON，OpenAI-compatible subset
 - `POST /v1/images/edits`：multipart，最多 4 张图片，需配置图像输入绑定
 - `GET /docs`：FastAPI API 文档
+
+OpenAI 原始字段（`model`、`prompt`、`size`、`n`、`response_format`）与模型额外参数（Qwen 的 `quality` / `negative_prompt` / `custom_size`，Z-Image 的 `steps`）使用方式见 [完整文档](docs/OPENAI_API.md)。
 
 当前只返回 `response_format=b64_json`，**不提供 URL 格式**：第三方 Space 的文件 URL 可能很快过期，且本项目没有部署持久图床。`n` 通过顺序调用上游实现（若 seed 非负则逐张加一）。
 
