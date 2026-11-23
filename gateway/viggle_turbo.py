@@ -58,11 +58,6 @@ def build_args(profile, payload, image_paths=None):
 
     # Gradio Gallery input: list of objects wrapping the FileData.
     gallery = [{"image": handle_file(path), "caption": None} for path in paths]
-    # Gradio upstream sliders require dimensions >= 512 in multiples of 32.
-    if (width != 1024 or height != 1024) and (
-        width < 512 or height < 512 or width % 32 or height % 32
-    ):
-        raise ValueError("Viggle 自定义宽高需至少 512，且为 32 的倍数")
     preset = SQUARE_PRESET if (width, height) == (1024, 1024) else CUSTOM_PRESET
     return [
         payload["prompt"],  # Prompt
