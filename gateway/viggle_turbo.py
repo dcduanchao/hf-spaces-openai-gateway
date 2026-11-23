@@ -20,6 +20,7 @@ from .upstream_logging import logger
 # Other valid dimensions take its "Custom" path with explicit width/height.
 SQUARE_PRESET = "1:1 · 1024×1024 (1024² area)"
 MAX_REFERENCES = 4
+MAX_SEED = 2**31 - 1  # Matches Viggle Gradio Seed widget upper bound
 
 
 def build_args(profile, payload, image_paths=None):
@@ -50,12 +51,17 @@ def build_args(profile, payload, image_paths=None):
     steps = validate_extra(extras.get("steps", steps_spec.default), steps_spec)
 
     user_seed = int(payload.get("seed", -1))
-    if user_seed < -1 or user_seed > 2**32 - 1:
-        raise ValueError("seed 应为 -1（随机）或 0～4294967295")
-    seed = secrets.randbelow(2**32) if user_seed == -1 else user_seed
+    if user_seed < -1 or user_seed > MAX_SEED:
+        raise ValueError("seed 应为 -1（随机）或 0～2147483647")
+    seed = secrets.randbelow(MAX_SEED + 1) if user_seed == -1 else user_seed
 
     # Gradio Gallery input: list of objects wrapping the FileData.
     gallery = [{"image": handle_file(path), "caption": None} for path in paths]
+    # Gradio upstream sliders require dimensions >= 512 in multiples of 32.
+    if (width != 1024 or height != 1024) and (
+        width < 512 or height < 512 or width % 32 or height % 32
+    ):
+        raise ValueError("Viggle 自定义宽高需至少 512，且为 32 的倍数")
     preset = SQUARE_PRESET if (width, height) == (1024, 1024) else "Custom"
     return [
         payload["prompt"],  # Prompt
