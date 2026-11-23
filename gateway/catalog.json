@@ -2,21 +2,49 @@
   "models": [
     {
       "id": "qwen-image-2.1",
+      "adapter": "qwen_image",
       "space_id": "duan0320/Qwen-Image-2.1",
-      "api_name": null,
-      "enabled": false,
-      "description": "示例占位。先运行 inspect_space.py 获取真实 API，再配置 endpoint、bindings 和 result_path，最后启用。",
-      "modes": ["generations"],
+      "api_name": "/generate",
+      "enabled": true,
+      "description": "Qwen Image 2.1 · 第三方 Hugging Face Space。运行时探测 Gradio API；上游接口变动时会提示失败。",
+      "modes": [
+        "generations"
+      ],
       "default_size": "1024x1024",
-      "allowed_sizes": ["1024x1024", "1024x768", "768x1024"],
-      "bindings": {
-        "prompt": "prompt",
-        "width": "width",
-        "height": "height",
-        "seed": "seed"
+      "allowed_sizes": [
+        "1024x1024",
+        "1024x768",
+        "768x1024"
+      ],
+      "bindings": {},
+      "fixed": {},
+      "extras": {
+        "negative_prompt": {
+          "target": "negative_prompt",
+          "kind": "str",
+          "default": ""
+        },
+        "enable_extend": {
+          "target": "enable_extend",
+          "kind": "bool",
+          "default": false
+        },
+        "quality": {
+          "target": "quality",
+          "kind": "str",
+          "default": "speed",
+          "choices": [
+            "speed",
+            "quality"
+          ]
+        },
+        "custom_size": {
+          "target": "custom_size",
+          "kind": "bool",
+          "default": false
+        }
       },
-      "extras": {},
-      "result_path": [0]
+      "result_path": []
     }
   ]
 }

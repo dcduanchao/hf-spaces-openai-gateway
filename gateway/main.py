@@ -129,6 +129,7 @@ async def edit(model: str = Form(...), prompt: str = Form(...), image: list[Uplo
             paths.append(str(dest))
         return produce(body.model_dump(), token, mode="edits", paths=paths)
 
-@app.get("/", response_class=HTMLResponse)
-def home():
-    return """<!doctype html><html lang='zh'><meta charset='utf-8'><title>HF Spaces OpenAI Gateway</title><style>body{font:16px system-ui;margin:8vh auto;max-width:680px;padding:20px;line-height:1.7}code{background:#eee;padding:3px 6px;border-radius:5px}</style><h1>HF Spaces → OpenAI Image Gateway</h1><p>第三方 Hugging Face Spaces 生图 API 统一网关。请先配置网关密钥、模型清单与真实的 Gradio API 参数。</p><p>接口：<code>GET /v1/models</code>、<code>POST /v1/images/generations</code>、<code>POST /v1/images/edits</code></p><p><a href='/docs'>API 文档</a> · <a href='/health'>Health</a></p></html>"""
+# Serve Gradio studio on / while preserving the FastAPI image endpoints.
+import gradio as gr
+from .ui import create_ui, CSS
+app = gr.mount_gradio_app(app, create_ui(), path="/", css=CSS)
