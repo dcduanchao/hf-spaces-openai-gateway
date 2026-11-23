@@ -4,17 +4,25 @@
       "id": "qwen-image-2.1",
       "adapter": "qwen_image",
       "space_id": "duan0320/Qwen-Image-2.1",
-      "api_name": "/generate",
+      "api_name": "/generate_request",
       "enabled": true,
-      "description": "Qwen Image 2.1 · 第三方 Hugging Face Space。运行时探测 Gradio API；上游接口变动时会提示失败。",
+      "description": "Qwen Image 2.1 · 按上游真实 /prepare_request → /generate_request 协议调用，支持文生图与最多 4 张参考图编辑。",
       "modes": [
-        "generations"
+        "generations",
+        "edits"
       ],
       "default_size": "1024x1024",
       "allowed_sizes": [
         "1024x1024",
-        "1024x768",
-        "768x1024"
+        "1344x768",
+        "768x1344",
+        "1184x864",
+        "864x1184",
+        "2048x2048",
+        "2688x1536",
+        "1536x2688",
+        "2368x1728",
+        "1728x2368"
       ],
       "bindings": {},
       "fixed": {},
@@ -41,7 +49,7 @@
         "custom_size": {
           "target": "custom_size",
           "kind": "bool",
-          "default": false
+          "default": true
         }
       },
       "result_path": []
