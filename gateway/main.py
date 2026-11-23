@@ -101,9 +101,34 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None):
 def health():
     return {"ok": True, "auth_required": False, "models": len(load_profiles())}
 
+# Process-local publication timestamp, not the upstream model's release date.
+CATALOG_PUBLISHED_AT = int(time.time())
+
+
 @app.get("/v1/models")
 def models():
-    return {"object": "list", "data": [{"id": p.id, "object": "model", "owned_by": p.space_id, "description": p.description, "modes": p.modes, "default_size": p.default_size, "sizes": p.allowed_sizes, "extra_parameters": {k: v.model_dump() for k, v in p.extras.items()}} for p in load_profiles().values()]}
+    return {"data": [{
+        "id": p.id,
+        "object": "model",
+        "created": CATALOG_PUBLISHED_AT,
+        "owned_by": p.space_id.split("/", 1)[0],
+        "type": "model",
+        "display_name": p.display_name or p.id,
+    } for p in load_profiles().values()]}
+
+
+@app.get("/v1/models/detail")
+def models_detail():
+    return {"object": "list", "data": [{
+        "id": p.id,
+        "object": "model",
+        "owned_by": p.space_id,
+        "description": p.description,
+        "modes": p.modes,
+        "default_size": p.default_size,
+        "sizes": p.allowed_sizes,
+        "extra_parameters": {k: v.model_dump() for k, v in p.extras.items()},
+    } for p in load_profiles().values()]}
 
 @app.post("/v1/images/generations")
 def generate(body: GenerateRequest, authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
