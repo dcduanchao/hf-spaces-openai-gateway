@@ -88,9 +88,9 @@ def upstream_error_message(exc: Exception) -> tuple[int, str, str]:
     message = re.sub(r"hf_[A-Za-z0-9_]+", "[HF_TOKEN_REDACTED]", raw)
     message = re.sub(r"Bearer\\s+[^\\s,;]+", "Bearer [REDACTED]", message, flags=re.I)
     msg = message.lower()
-    if any(term in msg for term in ("quota", "zero gpu", "zerogpu", "gpu seconds", "daily limit", "rate limit", "too many requests", "429", "no gpu time")):
+    if any(term in msg for term in ("quota", "zero gpu", "zerogpu", "gpu seconds", "daily limit", "rate limit", "too many requests", "429", "no gpu time", "runs limit", "run limit", "exceeded your zerogpu runs")):
         return (429, "upstream_quota_exceeded",
-                "Upstream ZeroGPU quota or rate limit exhausted. Retry later or provide your own HF Token via X-HF-Token.")
+                "ZeroGPU run/quota limit reached for this caller. Use a valid HF Token via X-HF-Token or Authorization: Bearer hf_..., check /v1/hf/status, or retry after quota reset. A token does not bypass exhausted account quotas.")
     # Avoid returning upstream exception text, which can include private headers or URLs.
     return (502, "upstream_failed",
             "Upstream Space failed (" + type(exc).__name__ + "). Check Space status and its Container Logs.")
