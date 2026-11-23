@@ -96,3 +96,54 @@ def token_quota_info(token: str) -> str:
         "说明：以上是 Hugging Face 当前返回的账号级 GPU 额度，"
         "不代表每次生成任务允许持续运行的时间；如有额外额度，已用时长仅供参考。"
     )
+
+
+def quota_status(token: str | None) -> dict:
+    """Structured account-level ZeroGPU quota, using only a caller-provided token.
+
+    All timestamps use ISO 8601 UTC; never return or log the credential.
+    """
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    if not token:
+        return {
+            "authenticated": False, "status": "anonymous", "username": None,
+            "remaining_seconds": None, "base_seconds": None, "used_seconds": None,
+            "resets_at": None, "checked_at": now,
+            "message": "Anonymous mode has no account quota information. Provide your HF Token using X-HF-Token.",
+        }
+    if not TOKEN_PATTERN.fullmatch(token):
+        raise ValueError("Invalid HF Token format")
+    try:
+        identity = HfApi(token=token).whoami()
+    except Exception as exc:
+        raise PermissionError("HF Token validation failed; check token permissions or expiration") from exc
+    username = re.sub(r"[^A-Za-z0-9_.-]", "", str(identity.get("name") or ""))[:80] or None
+    try:
+        response = httpx.get(
+            QUOTA_ENDPOINT,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=12.0,
+            follow_redirects=False,
+        )
+        response.raise_for_status()
+        remaining, base, reset = parse_quota(response.json())
+    except Exception as exc:
+        raise ConnectionError(
+            "HF ZeroGPU quota unavailable; check Billing read permission or retry later"
+        ) from exc
+    reset_iso = None
+    if isinstance(reset, str) and reset:
+        try:
+            dt = datetime.fromisoformat(reset.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            reset_iso = dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        except ValueError:
+            pass
+    return {
+        "authenticated": True, "status": "valid", "username": username,
+        "remaining_seconds": remaining, "base_seconds": base,
+        "used_seconds": max(0.0, base - remaining),
+        "resets_at": reset_iso, "checked_at": now,
+        "message": "Account-level ZeroGPU quota; not per-request GPU execution time.",
+    }
