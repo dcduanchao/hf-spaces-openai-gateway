@@ -71,7 +71,7 @@ def confirm_reference(candidate, files, added):
     with dest.open("xb") as target:
         target.write(png)
     paths.append(str(dest))
-    entries.append({"url": candidate["url"], "path": str(dest), "kind": kind})
+    entries.append({"url": candidate["url"], "path": str(dest), "kind": kind, "title": candidate.get("title", "")})
     return paths, entries, (
         f"已添加 **{kind}** 参考图至上传图片框（共 {len(paths)}/{MAX_INPUT_IMAGES} 张）。"
         "可继续上传、从其他图库选图，或直接开始编辑。"
