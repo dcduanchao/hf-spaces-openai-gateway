@@ -73,8 +73,11 @@ class ViggleContractTests(unittest.TestCase):
             build_args(self.profile, {"prompt": "cat", "size": "1024x1536"})[2],
             "Custom · set width and height below",
         )
-        with self.assertRaisesRegex(ValueError, "32"):
-            build_args(self.profile, {"prompt": "cat", "size": "1000x1500"})
+        # No Viggle-only multiple-of-32 or >=512 restriction: defer to
+        # the gateway's shared safety limits and upstream model itself.
+        args = build_args(self.profile, {"prompt": "cat", "size": "1000x1500"})
+        self.assertEqual(args[2], CUSTOM_PRESET)
+        self.assertEqual(args[7:9], [1000, 1500])
 
     def test_invalid_options_and_reference_limit(self):
         for extras in ({"model_version":"v0.2.1"}, {"enhance_prompt":"On"}, {"steps":10}):
