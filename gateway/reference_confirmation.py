@@ -32,7 +32,7 @@ def preview_candidate(results, index):
     if not isinstance(index, int) or index < 0 or index >= len(results or []):
         return None, None, "请点击一张图库图片进行预览。"
     row = results[index]
-    candidate = {key: row[key] for key in ("id", "kind", "title", "url")}
+    candidate = {key: row.get(key, "") for key in ("id", "kind", "title", "url", "detail") }
     return candidate, row["url"], (
         f"正在预览：**{candidate['kind']} · {candidate['title']}**。"
         "这张图尚未加入上传图片框；确认后才会添加。"
@@ -48,7 +48,7 @@ def confirm_reference(candidate, files, added):
     if not isinstance(candidate, dict) or candidate.get("kind") not in ("人像", "服装", "姿势"):
         raise ValueError("请先点击图库图片进行预览")
     kind = candidate["kind"]
-    allowed = {item["url"] for item in load_references(kind)}
+    allowed = {item["url"]: item for item in load_references(kind)}
     if candidate.get("url") not in allowed:
         raise ValueError("图库参考图无效，请重新预览并选择")
     paths = normalize_paths(files)
@@ -71,7 +71,9 @@ def confirm_reference(candidate, files, added):
     with dest.open("xb") as target:
         target.write(png)
     paths.append(str(dest))
-    entries.append({"url": candidate["url"], "path": str(dest), "kind": kind, "title": candidate.get("title", "")})
+    entries.append({"url": candidate["url"], "path": str(dest), "kind": kind,
+                    "title": allowed[candidate["url"]].get("title", ""),
+                    "detail": allowed[candidate["url"]].get("detail", "")})
     return paths, entries, (
         f"已添加 **{kind}** 参考图至上传图片框（共 {len(paths)}/{MAX_INPUT_IMAGES} 张）。"
         "可继续上传、从其他图库选图，或直接开始编辑。"
