@@ -18,6 +18,27 @@ class PublicApiTests(unittest.TestCase):
         ids = {x["id"] for x in response.json()["data"]}
         self.assertIn("qwen-image-2.1", ids)
         self.assertIn("z-image-turbo", ids)
+        self.assertEqual(set(response.json()), {"data"})
+        expected = {"id", "object", "created", "owned_by", "type", "display_name"}
+        for item in response.json()["data"]:
+            self.assertEqual(set(item), expected)
+            self.assertEqual(item["object"], "model")
+            self.assertEqual(item["type"], "model")
+            self.assertIsInstance(item["created"], int)
+        z = next(item for item in response.json()["data"] if item["id"] == "z-image-turbo")
+        self.assertEqual(z["display_name"], "Z-Image-Turbo")
+        self.assertEqual(z["owned_by"], "mrfakename")
+
+    def test_models_detail_preserves_previous_format(self):
+        with patch.dict(os.environ, {}, clear=True):
+            response = self.client.get("/v1/models/detail")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["object"], "list")
+        model = next(item for item in response.json()["data"] if item["id"] == "qwen-image-2.1")
+        self.assertEqual(model["owned_by"], "duan0320/Qwen-Image-2.1")
+        self.assertIn("sizes", model)
+        self.assertIn("modes", model)
+        self.assertIn("quality", model["extra_parameters"])
 
     def test_anonymous_request_does_not_use_server_secret(self):
         with patch.dict(os.environ, {"UPSTREAM_HF_TOKEN": "hf_OWNER_SECRET"}):
