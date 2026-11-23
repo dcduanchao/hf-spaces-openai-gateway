@@ -35,6 +35,10 @@ pinned: false
 
 **版权与使用范围**：素材来源于 [anhao/ai-pose-gallery-zh](https://github.com/anhao/ai-pose-gallery-zh)，原仓库 MIT 许可证仅适用于代码，**不覆盖人像、服装和姿势图像**。源仓库载明非商业使用等限制；用户必须确认其选图、生成及 Bucket 持久保存行为符合原素材许可。集成界面默认过滤明显成人/性感分类，无成人模式。
 
+### 网页工作室与 API 统一调用
+
+Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 OpenAI HTTP API（`127.0.0.1:7860`），网页不再直接创建上游 ZeroGPU Client。网页填写的 HF Token 通过 `X-HF-Token` 逐请求传给 API，后续身份和上游推理处理与 Postman/API 调用一致。文生图走 `/v1/images/generations`，确认选入上传框的多图编辑走 `/v1/images/edits`，图片顺序不变。API 统一负责历史记录与参考图/生成图的 Bucket 保存，不会因 UI 和 API 双重记录。
+
 ## 接口
 
 - `GET /health`
