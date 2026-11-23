@@ -17,6 +17,7 @@ from .adapter import invoke, parse_size
 from .token_quota import quota_status
 from .temp_images import get_temp_image, save_temp_image, public_image_url
 from . import history
+from .upstream_auth import token_tail
 from .admin import router as admin_router
 from .image_inputs import download_public_image, validate_png_bytes, ImageInputError
 
@@ -119,6 +120,7 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None, ip
     except ValueError as ex:
         err(400, "invalid_parameters", str(ex))
 
+    access_logger.info("[hf-auth] source=api mode=%s model=%s hf_token=%s", mode, p.id, token_tail(token))
     started = time.monotonic()
     try:
         record_id = history.new_record(p.id, mode, payload["prompt"], {
