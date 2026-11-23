@@ -38,7 +38,7 @@ class IdentityForwardingTests(unittest.TestCase):
             root = Path(d)
             (root / ".history_bucket_ready").write_text("test")
             with patch.object(history, "ROOT", root):
-                with patch("gateway.ui.invoke", return_value=buffer.getvalue()):
+                with patch("gateway.ui.api_generate", return_value=[buffer.getvalue()]):
                     with self.assertLogs("uvicorn.error", level="INFO") as captured:
                         ui.generate("文生图", "z-image-turbo", "cat", [],
                                     "1024x1024", 1, -1, secret, "{}", "",
@@ -113,19 +113,18 @@ class IdentityForwardingTests(unittest.TestCase):
             # identity from an unauthenticated private browser.
             browser_request = SimpleNamespace(headers={"x-ip-token": "anonymous-browser-edge"})
             with patch.object(history, "ROOT", root):
-                with patch("gateway.ui.invoke", return_value=buffer.getvalue()) as invoke:
+                with patch("gateway.ui.api_generate", return_value=[buffer.getvalue()]) as invoke:
                     images, message = ui.generate(
                         "文生图", "z-image-turbo", "cat", [], "1024x1024",
                         1, -1, "hf_USERPRO123", "{}", "",
                         request=browser_request,
                     )
         self.assertEqual(len(images), 1)
-        self.assertEqual(invoke.call_args.args[2], "hf_USERPRO123")
-        self.assertEqual(invoke.call_args.kwargs["ip_token"], "anonymous-browser-edge")
-        self.assertEqual(
-            client_kwargs(invoke.call_args.args[2], invoke.call_args.kwargs["ip_token"]),
-            {"token": "hf_USERPRO123", "verbose": False},
-        )
+        self.assertEqual(invoke.call_args.args[1], "hf_USERPRO123")
+        self.assertEqual(invoke.call_args.args[0]["model"], "z-image-turbo")
+        self.assertEqual(invoke.call_args.args[0]["n"], 1)
+        self.assertIsNone(invoke.call_args.kwargs["image_paths"])
+        self.assertNotIn("ip_token", invoke.call_args.kwargs)
 
     def test_api_propagates_edge_identity_not_persisted(self):
         with tempfile.TemporaryDirectory() as d:
