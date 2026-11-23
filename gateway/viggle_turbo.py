@@ -8,6 +8,8 @@ gateway pipeline.
 from __future__ import annotations
 
 import secrets
+import time
+import uuid
 
 from gradio_client import Client, handle_file
 
@@ -87,17 +89,26 @@ def run(profile, payload, token, image_paths=None, ip_token=None):
             "[hf-upstream] viggle space=%s endpoint=%s references=%d size=%sx%s steps=%d version=v0.3",
             profile.space_id, profile.api_name, len(args[1]), args[7], args[8], args[6],
         )
+        request_id = uuid.uuid4().hex[:12]
+        started = time.monotonic()
         try:
             result = client.predict(*args, api_name=profile.api_name)
             if not isinstance(result, (list, tuple)) or len(result) != 3:
                 raise RuntimeError("Viggle Turbo upstream result format invalid")
-            return result_bytes(select_result(result[0], []), profile)
+            image = result_bytes(select_result(result[0], []), profile)
         except ValueError as exc:
-            # A gradio_client ValueError after request construction is an
-            # upstream protocol/preprocessing failure, not necessarily a
-            # caller's invalid input. Never expose upstream exception text:
-            # it can contain prompt text or private file metadata.
-            logger.error("[hf-upstream] viggle_client_validation_failure type=%s", type(exc).__name__)
+            # Gradio protocol validation is a remote-client failure, not a
+            # local user-parameter error. Avoid logging raw text (prompts,
+            # image refs and credentials may be present).
+            logger.error("[hf-upstream] viggle_failure id=%s phase=predict_or_result type=%s duration_ms=%d",
+                         request_id, type(exc).__name__, int((time.monotonic()-started)*1000))
             raise RuntimeError("Viggle Turbo upstream client rejected prepared request") from None
+        except Exception as exc:
+            logger.error("[hf-upstream] viggle_failure id=%s phase=predict_or_result type=%s duration_ms=%d",
+                         request_id, type(exc).__name__, int((time.monotonic()-started)*1000))
+            raise
+        logger.info("[hf-upstream] viggle_success id=%s duration_ms=%d",
+                    request_id, int((time.monotonic()-started)*1000))
+        return image
     finally:
         client.close()
