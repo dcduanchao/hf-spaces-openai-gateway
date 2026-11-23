@@ -63,6 +63,35 @@ class IdentityForwardingTests(unittest.TestCase):
         self.assertEqual(client_kwargs("hf_USERPRO123", "anonymous-browser-edge")["token"],
                          "hf_USERPRO123")
 
+    def test_studio_passes_explicit_pro_token_to_generation(self):
+        """Exercise actual Gradio callback args, not just an adapter mock."""
+        from gateway import ui
+        from types import SimpleNamespace
+        from io import BytesIO
+        from PIL import Image
+        buffer = BytesIO()
+        Image.new("RGB", (4, 4), "red").save(buffer, "PNG")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".history_bucket_ready").write_text("test")
+            # UI must use the token input value even if request has an edge
+            # identity from an unauthenticated private browser.
+            browser_request = SimpleNamespace(headers={"x-ip-token": "anonymous-browser-edge"})
+            with patch.object(history, "ROOT", root):
+                with patch("gateway.ui.invoke", return_value=buffer.getvalue()) as invoke:
+                    images, message = ui.generate(
+                        "文生图", "z-image-turbo", "cat", [], "1024x1024",
+                        1, -1, "hf_USERPRO123", "{}", "",
+                        request=browser_request,
+                    )
+        self.assertEqual(len(images), 1)
+        self.assertEqual(invoke.call_args.args[2], "hf_USERPRO123")
+        self.assertEqual(invoke.call_args.kwargs["ip_token"], "anonymous-browser-edge")
+        self.assertEqual(
+            client_kwargs(invoke.call_args.args[2], invoke.call_args.kwargs["ip_token"]),
+            {"token": "hf_USERPRO123", "verbose": False},
+        )
+
     def test_api_propagates_edge_identity_not_persisted(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
