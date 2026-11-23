@@ -8,6 +8,7 @@
 - 详细模型列表：`GET /v1/models/detail`
 - 文生图：`POST /v1/images/generations`
 - 图片编辑：`POST /v1/images/edits`
+- HF Token 状态与 ZeroGPU 额度：`GET /v1/hf/status`
 - 健康检查：`GET /health`
 
 ## 1. 安装与 HF Token（可选）
@@ -95,6 +96,148 @@ for model in client.models.list().data:
 ```bash
 curl -sS "$GATEWAY_BASE_URL/models/detail"
 ```
+
+## 请求参数：OpenAI 标准字段与模型额外字段
+
+**特别注意：`model`、`prompt`、`size`、`n`、`response_format` 属于 OpenAI Images API 风格的原始字段；`seed` 和模型特有设置属于网关扩展参数。**
+
+| 类别 | 参数 | Qwen Image 2.1 | Z-Image-Turbo | 使用方式 |
+|---|---|---|---|---|
+| 标准 OpenAI 风格 | `model` | 支持 | 支持 | JSON 顶层或 SDK 直接参数 |
+| 标准 OpenAI 风格 | `prompt` | 支持 | 支持 | JSON 顶层或 SDK 直接参数 |
+| 标准 OpenAI 风格 | `size` | 支持（受支持尺寸限制） | 支持（受支持尺寸限制） | JSON 顶层或 SDK 直接参数 |
+| 标准 OpenAI 风格 | `n` | 1–4 | 1–4 | 网关多次串行执行 |
+| 标准 OpenAI 风格 | `response_format` | 仅 `b64_json` | 仅 `b64_json` | `url` 不支持 |
+| 网关扩展 | `seed` | -1 或非负整数 | -1 或非负整数 | SDK 的 `extra_body` 或 JSON 顶层 |
+| Qwen 专属 | `negative_prompt` | 字符串，默认空 | 不支持 | SDK 的 `extra_body` |
+| Qwen 专属 | `quality` | `speed` / `quality` | 不支持 | SDK 的 `extra_body` |
+| Qwen 专属 | `custom_size` | bool，默认 true | 不支持 | SDK 的 `extra_body` |
+| Z-Image 专属 | `steps` | 不支持 | 整数 1–30，默认 8 | SDK 的 `extra_body` |
+
+完整表格 Markdown 源码：
+
+```markdown
+| 类别 | 参数 | Qwen Image 2.1 | Z-Image-Turbo | 使用方式 |
+|---|---|---|---|---|
+| 标准 OpenAI 风格 | `model` | 支持 | 支持 | JSON 顶层或 SDK 直接参数 |
+| 标准 OpenAI 风格 | `prompt` | 支持 | 支持 | JSON 顶层或 SDK 直接参数 |
+| 标准 OpenAI 风格 | `size` | 支持（受支持尺寸限制） | 支持（受支持尺寸限制） | JSON 顶层或 SDK 直接参数 |
+| 标准 OpenAI 风格 | `n` | 1–4 | 1–4 | 网关多次串行执行 |
+| 标准 OpenAI 风格 | `response_format` | 仅 `b64_json` | 仅 `b64_json` | `url` 不支持 |
+| 网关扩展 | `seed` | -1 或非负整数 | -1 或非负整数 | SDK 的 `extra_body` 或 JSON 顶层 |
+| Qwen 专属 | `negative_prompt` | 字符串，默认空 | 不支持 | SDK 的 `extra_body` |
+| Qwen 专属 | `quality` | `speed` / `quality` | 不支持 | SDK 的 `extra_body` |
+| Qwen 专属 | `custom_size` | bool，默认 true | 不支持 | SDK 的 `extra_body` |
+| Z-Image 专属 | `steps` | 不支持 | 整数 1–30，默认 8 | SDK 的 `extra_body` |
+```
+
+### JSON / OpenAI SDK 的区别
+
+**Postman / cURL 原始 JSON** 可将 `seed` 放顶层，把模型专属参数放在嵌套的 `extra_body` 对象：
+
+```json
+{
+  "model": "z-image-turbo",
+  "prompt": "A cat on the windowsill",
+  "size": "1024x1024",
+  "n": 1,
+  "response_format": "b64_json",
+  "seed": -1,
+  "extra_body": {"steps": 9}
+}
+```
+
+**Python OpenAI SDK** 的 `extra_body` 由 SDK 合并进 HTTP JSON 顶层，因此应该这样写：
+
+```python
+client.images.generate(
+    model="z-image-turbo",
+    prompt="A cat on the windowsill",
+    size="1024x1024",
+    n=1,
+    extra_body={"seed": -1, "steps": 9},
+)
+```
+
+`seed` **不是官方 OpenAI Images 标准参数**，不应直接作为 `client.images.generate(seed=...)` 的关键字参数。不同模型的扩展字段不能混用，否则网关会返回 `400 invalid_parameters`。图片编辑接口采用 `multipart/form-data`，其 `extra_body` 字段必须是 JSON 字符串，不能发送 raw JSON。
+
+## HF Token 状态及 ZeroGPU 额度接口
+
+**GET** `/v1/hf/status`，无网关鉴权，HF Token 可选（仅查询**请求者本人**的额度，不会使用部署者 Token）。
+
+### Postman：匿名查询
+
+Method `GET`，URL：
+
+```text
+https://duan0320-hf-spaces-openai-gateway.hf.space/v1/hf/status
+```
+
+Authorization 选 `No Auth`，不设置 `X-HF-Token`，返回：
+
+```json
+{
+  "authenticated": false,
+  "status": "anonymous",
+  "username": null,
+  "remaining_seconds": null,
+  "base_seconds": null,
+  "used_seconds": null,
+  "resets_at": null,
+  "checked_at": "2026-11-23T06:00:00Z",
+  "message": "Anonymous mode has no account quota information. Provide your HF Token using X-HF-Token."
+}
+```
+
+### Postman / cURL：个人 HF Token
+
+Method `GET`，URL 同上，Headers：
+
+```text
+X-HF-Token: hf_你自己的访问令牌
+```
+
+或：
+
+```bash
+curl -sS "https://duan0320-hf-spaces-openai-gateway.hf.space/v1/hf/status" \
+  -H "X-HF-Token: $HF_TOKEN"
+```
+
+成功时的**结构示例**（仅展示字段，不是真实的账号数据）：
+
+```json
+{
+  "authenticated": true,
+  "status": "valid",
+  "username": "example_user",
+  "remaining_seconds": 1200,
+  "base_seconds": 3600,
+  "used_seconds": 2400,
+  "resets_at": "2026-11-24T00:00:00Z",
+  "checked_at": "2026-11-23T06:00:00Z",
+  "message": "Account-level ZeroGPU quota; not per-request GPU execution time."
+}
+```
+
+- `remaining_seconds`：上游当前返回的账号剩余 ZeroGPU 时长，单位秒。
+- `base_seconds`：基础额度秒数；`used_seconds`：按 `base - remaining` 估算。
+- `resets_at`：Hugging Face 返回的预计额度重置时刻（UTC ISO 8601），上游缺失时返回 `null`。
+- `checked_at`：该次**查询时间**（UTC ISO 8601），不是额度实际扣减或更新时间；API 不提供独立的上游额度“最后更新时间”字段。
+- HF Token 无效：`401 hf_token_invalid`；上游额度服务不可用：`502 hf_quota_unavailable`。如果 Token 是 Fine-grained 类型，可能需要 **Billing → Read billing usage and payment method status** 权限。
+- 出于隐私和安全考虑，Token 不在 JSON 响应或日志中出现；不提供 Token 无法获取个人剩余额度。
+
+## API 请求耗时日志
+
+网关对所有 HTTP 请求记录**总耗时**，包括上游排队/调用（但不等于 GPU 实际执行时间），例如：
+
+```text
+[gateway-request] id=a8d1f224bc67 method=POST path=/v1/images/generations status=200 duration_ms=19321
+```
+
+响应还会返回 `X-Request-ID` 和 `X-Request-Duration-Ms` 两个 Headers，便于与 Space Container Logs 对照。
+
+原有 `[hf-upstream]` 日志继续记录单个 Gradio API 调用的 `duration_ms`。对 Qwen 的两阶段上游调用，这两个耗时不等于整次 OpenAI 请求耗时。**不记录或暴露 Token、请求 Prompt 内容，也不能从总耗时精确推算 ZeroGPU 实际执行秒数。**
 
 ## 3. Qwen-Image-2.1 文生图
 
