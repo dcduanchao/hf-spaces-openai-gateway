@@ -17,7 +17,9 @@ class ParametersTest(unittest.TestCase):
             make_kwargs(self.profile, {"prompt": "cat", "hack": "anything"})
     def test_reject_size(self):
         with self.assertRaises(ValueError):
-            parse_size("4096x4096", self.profile)
+            parse_size("4096x4097", self.profile)
+    def test_custom_size_accepted(self):
+        self.assertEqual(parse_size("1024x1536", self.profile), (1024, 1536))
     def test_reject_extra_type(self):
         with self.assertRaises(ValueError):
             make_kwargs(self.profile, {"prompt": "cat", "steps": True})
