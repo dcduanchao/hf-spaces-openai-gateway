@@ -4,6 +4,8 @@ No GPU model is loaded by this application: every job is sent to an upstream HF 
 from __future__ import annotations
 import io
 import json
+import logging
+import re
 import os
 import tempfile
 import time
@@ -16,6 +18,18 @@ from .adapter import invoke
 from .models import load_profiles
 
 SIZE_LABEL = lambda s: s.replace("x", " × ")
+logger = logging.getLogger(__name__)
+
+
+def safe_upstream_error(exc):
+    # No traceback, prompts, session headers or HF tokens in logs or UI.
+    message = str(exc)
+    message = re.sub(r'hf_[A-Za-z0-9_]+', '[REDACTED_HF_TOKEN]', message)
+    message = re.sub(r'Bearer\\s+[^\\s]+', 'Bearer [REDACTED]', message, flags=re.I)
+    message = re.sub(r'https?://[^\\s]+', '[URL]', message)
+    return f'{type(exc).__name__}: {message[:450]}'
+
+
 CSS = """
 .gradio-container {max-width: 1060px !important; margin: auto !important;}
 #studio-hero {text-align:center; padding:12px 0 16px;}
@@ -118,10 +132,11 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
                 images.append((Image.open(io.BytesIO(png)).copy(), f"第 {index + 1} 张 · {model_id}"))
                 messages.append(f"第 {index + 1} 张生成成功")
         except Exception as e:
-            # Never display raw upstream error details or submitted credentials.
+            diagnostic = safe_upstream_error(e)
+            logger.error("Qwen upstream failure model=%s error=%s", model_id, diagnostic)
             if not images:
-                raise gr.Error("上游 Space 生图失败，请检查 Space 是否运行、API 是否变化、HF Token 和 ZeroGPU 额度。") from None
-            messages.append("部分图片已生成，后续调用失败，请检查上游状态。")
+                raise gr.Error(f"上游调用失败：{diagnostic}。请查看 Space Logs。") from None
+            messages.append(f"部分图片生成成功，后续失败：{diagnostic}")
         return images, "\n".join(messages) + f"\n耗时 {time.monotonic()-t0:.1f} 秒"
 
 def create_ui():
