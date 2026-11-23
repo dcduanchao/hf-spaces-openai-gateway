@@ -9,24 +9,32 @@
 - 图片编辑：`POST /v1/images/edits`
 - 健康检查：`GET /health`
 
-## 1. 安装和鉴权
+## 1. 安装与 HF Token（可选）
 
-在部署网关的 Hugging Face Space Secrets 中设置 `GATEWAY_API_KEY`。客户端必须使用这一密钥进行 Bearer 鉴权，而非直接使用 HF Token。
+**接口完全开放，不需要 `GATEWAY_API_KEY`**。直接访问 `GET /v1/models`，无需传任何请求头。
+
+生成与编辑请求默认以 **匿名身份**调用上游 Hugging Face Space。若匿名 ZeroGPU 额度不足，网关会返回 HTTP 429 / `upstream_quota_exceeded`（前提是上游错误信息可以识别为额度或限流）。你也可以为**每次请求**提供自己的 Hugging Face Token。
 
 ```bash
 pip install -U openai
 export GATEWAY_BASE_URL="https://duan0320-hf-spaces-openai-gateway.hf.space/v1"
-export GATEWAY_API_KEY="替换成你自己配置的网关密钥"
+# 可选：仅在希望使用自己 HF 账号额度时设置
+export HF_TOKEN="hf_替换为自己的Token"
 ```
 
 本地部署则改为 `http://localhost:7860/v1`。
 
-### 重要：网关密钥和 HF Token 的区别
+| 请求方式 | HF Token 提供方式 | 是否匿名 |
+|---|---|---|
+| cURL 请求 | 不传 Token 请求头 | 是 |
+| cURL 请求 | `X-HF-Token: hf_...` | 否 |
+| Python OpenAI SDK | `api_key="anonymous"` | 是 |
+| Python OpenAI SDK | `api_key="hf_..."` | 否（Bearer 传递 HF Token） |
+| Python OpenAI SDK | `api_key="anonymous"` 并使用 `default_headers={"X-HF-Token": "..."}` | 否 |
 
-- `GATEWAY_API_KEY`：校验客户端访问权限。
-- `UPSTREAM_HF_TOKEN`：可选的 **服务器端** HF Token；OpenAI API 使用该 Token 调用上游。任何持有网关密钥的人都可能间接消耗这个 HF 账号的 ZeroGPU 额度。
-- Gradio 网页工作室中的访客 HF Token 输入框只适用于网页交互，不会自动传给 OpenAI API。
-- 不要将任何真实 Token 提交到 GitHub 或放入公开示例。
+注意：标准 `openai` SDK 要求设置 `api_key` 参数，匿名时填写固定占位值 `anonymous`，并非真正的凭据。网关只把形如 `hf_...` 的 Bearer Token 视为用户提供的 HF Token，其他 Bearer 值不影响匿名访问。
+
+**安全：** 不再读取 `GATEWAY_API_KEY` 或 `UPSTREAM_HF_TOKEN`；就算服务端仍保存这些 Secrets，也不会用它们自动代用户调用第三方 Space。第三方 Space 的运营方仍可能接触你主动提供给它的 HF Token，因此只使用最低权限、独立的访问令牌。
 
 ## 2. 当前支持的模型
 
@@ -38,8 +46,7 @@ export GATEWAY_API_KEY="替换成你自己配置的网关密钥"
 查询实际启用模型及其支持尺寸和参数：
 
 ```bash
-curl -sS "$GATEWAY_BASE_URL/models" \
-  -H "Authorization: Bearer $GATEWAY_API_KEY"
+curl -sS "$GATEWAY_BASE_URL/models"
 ```
 
 ```python
@@ -48,7 +55,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url=os.environ["GATEWAY_BASE_URL"],
-    api_key=os.environ["GATEWAY_API_KEY"],
+    api_key=os.getenv("HF_TOKEN", "anonymous"),
     timeout=300.0,
 )
 for model in client.models.list().data:
@@ -67,7 +74,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url=os.getenv("GATEWAY_BASE_URL", "https://duan0320-hf-spaces-openai-gateway.hf.space/v1"),
-    api_key=os.environ["GATEWAY_API_KEY"],
+    api_key=os.getenv("HF_TOKEN", "anonymous"),
     timeout=300.0,
 )
 result = client.images.generate(
@@ -94,7 +101,7 @@ print("已保存 qwen.png")
 
 ```bash
 curl -sS "$GATEWAY_BASE_URL/images/generations" \
-  -H "Authorization: Bearer $GATEWAY_API_KEY" \
+  -H "X-HF-Token: $HF_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "qwen-image-2.1",
@@ -128,7 +135,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url=os.getenv("GATEWAY_BASE_URL", "https://duan0320-hf-spaces-openai-gateway.hf.space/v1"),
-    api_key=os.environ["GATEWAY_API_KEY"],
+    api_key=os.getenv("HF_TOKEN", "anonymous"),
     timeout=300.0,
 )
 with open("input.png", "rb") as image:
@@ -147,7 +154,7 @@ print("已保存 qwen-edit.png")
 
 ```bash
 curl -sS "$GATEWAY_BASE_URL/images/edits" \
-  -H "Authorization: Bearer $GATEWAY_API_KEY" \
+  -H "X-HF-Token: $HF_TOKEN" \
   -F "model=qwen-image-2.1" \
   -F "prompt=保留人物姿态，将背景改为海边日落" \
   -F "image=@input.png;type=image/png" \
@@ -178,7 +185,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url=os.getenv("GATEWAY_BASE_URL", "https://duan0320-hf-spaces-openai-gateway.hf.space/v1"),
-    api_key=os.environ["GATEWAY_API_KEY"],
+    api_key=os.getenv("HF_TOKEN", "anonymous"),
     timeout=300.0,
 )
 result = client.images.generate(
@@ -198,7 +205,7 @@ print("已保存 z-image.png")
 
 ```bash
 curl -sS "$GATEWAY_BASE_URL/images/generations" \
-  -H "Authorization: Bearer $GATEWAY_API_KEY" \
+  -H "X-HF-Token: $HF_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "z-image-turbo",
@@ -242,12 +249,12 @@ python -c 'import json,base64; open("z-image.png","wb").write(base64.b64decode(j
 
 | HTTP 状态 | 错误码 | 解释 |
 |---|---|---|
-| 503 | `gateway_unconfigured` | Space 未配置 `GATEWAY_API_KEY` |
-| 401 | `invalid_api_key` | 网关 Bearer API Key 无效 |
+| 429 | `upstream_quota_exceeded` | 上游匿名额度或请求频率限制，稍后重试或提供自己的 HF Token |
 | 404 | `model_not_found` | 模型 ID 错误或已禁用 |
 | 400 | `unsupported_mode` | 模型不支持对应的生成/编辑能力 |
 | 400 | `invalid_parameters` | 尺寸、Seed 或扩展参数不合法 |
 | 400 | `unsupported_format` | 请求了不支持的返回格式 |
+| 400 | `invalid_hf_token` | 显式传入的 HF Token 格式不合法 |
 | 502 | `upstream_failed` | 上游 Space 无法执行，可能是额度、排队、依赖、模型加载或 API 变动 |
 
 图片编辑的数量、类型和文件大小错误可能返回其他 400/413 响应。可在 HF Space Container Logs 中按 `[hf-upstream]` 查询接口、参数和耗时诊断信息。成功部署并不代表上游 GPU 调用一定成功。
