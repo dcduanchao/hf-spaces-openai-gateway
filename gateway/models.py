@@ -17,6 +17,7 @@ class ExtraSpec(BaseModel):
 
 class Profile(BaseModel):
     id: str
+    display_name: str = ""
     adapter: str = "generic"
     space_id: str
     api_name: str | None = None
