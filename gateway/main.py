@@ -355,7 +355,8 @@ async def edit(request: Request, authorization: str | None = Header(default=None
             target = Path(folder) / f"input_{index}.png"
             target.write_bytes(png)
             paths.append(str(target))
-        return await asyncio.to_thread(produce, body.model_dump(), token, "edits", paths,\n                                       request.headers.get("x-ip-token"))
+        return await asyncio.to_thread(produce, body.model_dump(), token, "edits", paths,
+                                       request.headers.get("x-ip-token"))
 
 # Serve Gradio studio on / while preserving the FastAPI image endpoints.
 import gradio as gr
