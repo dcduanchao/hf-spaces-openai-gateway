@@ -15,8 +15,11 @@ from .models import load_profiles
 from .adapter import invoke, parse_size
 from .token_quota import quota_status
 from .temp_images import get_temp_image, save_temp_image, public_image_url
+from . import history
+from .admin import router as admin_router
 
 app = FastAPI(title="HF Spaces OpenAI Image Gateway", version="0.1.0")
+app.include_router(admin_router)
 
 access_logger = logging.getLogger("uvicorn.error")
 
@@ -111,21 +114,49 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None):
         err(400, "unsupported_format", "Supported response_format values: url, b64_json")
     try:
         parse_size(payload.get("size") or p.default_size, p)
-        data = []
+    except ValueError as ex:
+        err(400, "invalid_parameters", str(ex))
+
+    started = time.monotonic()
+    try:
+        record_id = history.new_record(p.id, mode, payload["prompt"], {
+            "size": payload.get("size") or p.default_size,
+            "n": payload.get("n", 1),
+            "seed": payload.get("seed", -1),
+            "response_format": response_format,
+            "extra_body": payload.get("extra_body") or {},
+        })
+    except (RuntimeError, OSError) as ex:
+        err(503, "history_storage_unavailable", str(ex))
+
+    data = []
+    try:
+        if paths:
+            from PIL import Image
+            import io
+            for path in paths:
+                with Image.open(path) as source:
+                    target = io.BytesIO()
+                    source.convert("RGB").save(target, format="PNG")
+                history.store_image(record_id, target.getvalue(), input_image=True)
         for i in range(payload.get("n", 1)):
             item = dict(payload)
             if item.get("seed", -1) >= 0:
                 item["seed"] += i
             png = invoke(p, item, token, image_paths=paths)
+            history.store_image(record_id, png)
             if response_format == "url":
                 data.append({"url": public_image_url(save_temp_image(png))})
             else:
                 data.append({"b64_json": base64.b64encode(png).decode("ascii")})
     except ValueError as ex:
+        history.finish_record(record_id, "failed", round((time.monotonic() - started) * 1000), "invalid_parameters")
         err(400, "invalid_parameters", str(ex))
     except Exception as ex:
         status, code, message = upstream_error_message(ex)
+        history.finish_record(record_id, "failed", round((time.monotonic() - started) * 1000), code)
         err(status, code, message)
+    history.finish_record(record_id, "success", round((time.monotonic() - started) * 1000))
     return {"created": int(time.time()), "data": data, "model": p.id}
 
 @app.get("/health")
