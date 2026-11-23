@@ -1,5 +1,8 @@
 """Regression tests for public model listings and caller-owned HF tokens."""
 import os
+import tempfile
+from pathlib import Path
+from urllib.parse import urlsplit
 import unittest
 from unittest.mock import patch
 
@@ -96,6 +99,42 @@ class PublicApiTests(unittest.TestCase):
                 })
         self.assertEqual(response.status_code, 200, response.text)
         self.assertIsNone(fake.call_args.args[2])
+
+    def test_default_url_response_and_file_download(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with patch("gateway.temp_images.IMAGE_DIR", Path(folder)):
+                with patch("gateway.main.invoke", return_value=b"fake-png-bytes"):
+                    response = self.client.post("/v1/images/generations", json={
+                        "model": "z-image-turbo", "prompt": "cat", "size": "1024x1024"
+                    })
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertIn("url", response.json()["data"][0])
+                self.assertNotIn("b64_json", response.json()["data"][0])
+                image_path = urlsplit(response.json()["data"][0]["url"]).path
+                downloaded = self.client.get(image_path)
+                self.assertEqual(downloaded.status_code, 200, downloaded.text)
+                self.assertEqual(downloaded.content, b"fake-png-bytes")
+                self.assertTrue(downloaded.headers["content-type"].startswith("image/png"))
+
+    def test_expired_image_returns_404(self):
+        from gateway import temp_images
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(temp_images, "IMAGE_DIR", Path(folder)):
+                image_id = temp_images.save_temp_image(b"fake-image")
+                old = __import__("time").time() - temp_images.IMAGE_TTL_SECONDS - 10
+                os.utime(Path(folder) / image_id, (old, old))
+                result = self.client.get("/v1/files/" + image_id)
+                self.assertEqual(result.status_code, 404)
+                self.assertEqual(result.json()["error"]["code"], "image_not_found")
+
+    def test_explicit_base64_still_supported(self):
+        with patch("gateway.main.invoke", return_value=b"abc"):
+            response = self.client.post("/v1/images/generations", json={
+                "model": "z-image-turbo", "prompt": "cat",
+                "response_format": "b64_json"
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["data"][0]["b64_json"], "YWJj")
 
     def test_generation_can_use_per_request_token(self):
         with patch("gateway.main.invoke", return_value=b"abc") as fake:
