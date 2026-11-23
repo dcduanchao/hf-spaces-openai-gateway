@@ -1,6 +1,7 @@
 """Regression tests for public model listings and caller-owned HF tokens."""
 import os
 import tempfile
+from gateway import history
 from pathlib import Path
 from urllib.parse import urlsplit
 import unittest
@@ -12,6 +13,13 @@ from gateway.main import app, request_hf_token, upstream_error_message
 
 class PublicApiTests(unittest.TestCase):
     def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        (root / ".history_bucket_ready").write_text("test")
+        bucket_patch = patch.object(history, "ROOT", root)
+        bucket_patch.start()
+        self.addCleanup(bucket_patch.stop)
         self.client = TestClient(app)
 
     def test_hf_status_anonymous(self):
