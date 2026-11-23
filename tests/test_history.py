@@ -107,7 +107,10 @@ class HistoryTests(unittest.TestCase):
         self.assertIn('id="lightbox"', html)
         self.assertIn("modal.showModal()", html)
         self.assertIn('id="output-images"', html)
-        self.assertIn('id="input-images"', html)\n        self.assertIn("PAGE_SIZE=20", html)\n        self.assertIn("prompt-preview", html)\n        self.assertIn('id="delete-all"', html)
+        self.assertIn('id="input-images"', html)
+        self.assertIn("PAGE_SIZE=20", html)
+        self.assertIn("prompt-preview", html)
+        self.assertIn('id="delete-all"', html)
         self.assertNotIn("ADMIN_API_KEY_VALUE", html)
         self.assertIn("no-store", response.headers["cache-control"])
 
