@@ -44,8 +44,12 @@ class EditUrlTests(unittest.TestCase):
             {"image_url": "https://ga.du-ai.top/img/costume/SUM-0007.webp"},
             {"image_url": "https://ga.du-ai.top/img/upper80v2_P034_front.png"},
         ]
+        captured_inputs = []
+        def capture_invoke(profile, payload, token, **kwargs):
+            captured_inputs.extend(Path(p).read_bytes() for p in kwargs["image_paths"])
+            return tiny_png()
         with patch("gateway.main.download_public_image", return_value=tiny_png()) as downloaded:
-            with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
+            with patch("gateway.main.invoke", side_effect=capture_invoke) as invoke:
                 response = self.client.post("/v1/images/edit", json=self.payload(
                     images=urls, size="1024x1536", quality="high",
                     input_fidelity="high", output_format="png",
@@ -55,10 +59,8 @@ class EditUrlTests(unittest.TestCase):
         self.assertEqual([c.args[0] for c in downloaded.call_args_list],
                          [urls[1]["image_url"], urls[2]["image_url"]])
         self.assertEqual(invoke.call_args.args[1]["extra_body"]["quality"], "quality")
-        paths = invoke.call_args.kwargs["image_paths"]
-        self.assertEqual(len(paths), 3)
-        self.assertEqual([Path(p).read_bytes() for p in paths],
-                         [tiny_png(), tiny_png(), tiny_png()])
+        self.assertEqual(len(invoke.call_args.kwargs["image_paths"]), 3)
+        self.assertEqual(captured_inputs, [tiny_png(), tiny_png(), tiny_png()])
         record = history.get_record(history.list_records()["items"][0]["id"])
         self.assertEqual(len(record["input_images"]), 3)
         self.assertNotIn(inline, str(record))
