@@ -4,7 +4,8 @@
 
 - 在线 API Base URL：`https://duan0320-hf-spaces-openai-gateway.hf.space/v1`
 - 图片工作室：`https://duan0320-hf-spaces-openai-gateway.hf.space/`
-- 模型列表：`GET /v1/models`
+- 精简模型列表：`GET /v1/models`
+- 详细模型列表：`GET /v1/models/detail`
 - 文生图：`POST /v1/images/generations`
 - 图片编辑：`POST /v1/images/edits`
 - 健康检查：`GET /health`
@@ -43,7 +44,7 @@ export HF_TOKEN="hf_替换为自己的Token"
 | `qwen-image-2.1` | `duan0320/Qwen-Image-2.1` | ✅ | ✅，1–4 张图片 | `quality`、`negative_prompt`、`custom_size` |
 | `z-image-turbo` | `mrfakename/Z-Image-Turbo` | ✅ | ❌ | `steps` |
 
-查询实际启用模型及其支持尺寸和参数：
+查询精简模型列表：
 
 ```bash
 curl -sS "$GATEWAY_BASE_URL/models"
@@ -60,6 +61,39 @@ client = OpenAI(
 )
 for model in client.models.list().data:
     print(model.id)
+```
+
+**`GET /v1/models` 返回示例：**
+
+```json
+{
+  "data": [
+    {
+      "id": "qwen-image-2.1",
+      "object": "model",
+      "created": 1795400000,
+      "owned_by": "duan0320",
+      "type": "model",
+      "display_name": "Qwen Image 2.1"
+    },
+    {
+      "id": "z-image-turbo",
+      "object": "model",
+      "created": 1795400000,
+      "owned_by": "mrfakename",
+      "type": "model",
+      "display_name": "Z-Image-Turbo"
+    }
+  ]
+}
+```
+
+> `created` 仅为示例，实际值是网关进程启动时的 Unix 时间戳，不是上游模型的真实创建日期。
+
+如需原来的完整字段（`description`、`modes`、`sizes`、`default_size`、`extra_parameters`）：
+
+```bash
+curl -sS "$GATEWAY_BASE_URL/models/detail"
 ```
 
 ## 3. Qwen-Image-2.1 文生图
@@ -234,6 +268,8 @@ Postman 中可以创建 Environment 变量：
 - URL：`{{base_url}}/v1/models`
 - Authorization：**No Auth**
 - Body：**none**
+
+详细版本：把 URL 改为 `{{base_url}}/v1/models/detail`。
 
 无需 Token，直接发送即可。
 
