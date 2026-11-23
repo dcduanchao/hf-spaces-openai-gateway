@@ -14,7 +14,8 @@ from pathlib import Path
 import gradio as gr
 from PIL import Image
 
-from .adapter import invoke, parse_size
+from .adapter import parse_size
+from .studio_api import api_generate, StudioAPIError
 from .models import load_profiles
 from .token_quota import token_quota_info
 from . import history
@@ -189,66 +190,39 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
     hf_token = (token or "").strip() or None
     if hf_token and not re.fullmatch(r"hf_[A-Za-z0-9_]+", hf_token):
         raise gr.Error("HF Token 格式不正确，请填写 hf_ 开头的个人访问令牌。")
-    # X-IP-Token is added by the HF Spaces edge. The adapter creates a nested
-    # Gradio Client, so we must forward this identity to the upstream ZeroGPU.
-    ip_token = request.headers.get("x-ip-token") if request and request.headers else None
+    # The Gradio queue callback must use exactly the working HTTP API route.
+    # Token goes through X-HF-Token to the API; never pass the browser edge
+    # identity alongside a personal HF token or call the ZeroGPU client here.
     logger.info("[hf-auth] source=studio model=%s hf_token=%s", model_id, token_tail(hf_token))
-    # The UI uses only the token explicitly entered by the visitor. It does NOT
-    # silently spend the server owner's UPSTREAM_HF_TOKEN quota.
-    kwargs = {"model": model_id, "prompt": prompt, "size": size,
-              "seed": int(seed if seed is not None else -1),
-              "extra_body": extra}
-    images = []
-    messages = []
-    t0 = time.monotonic()
+    payload = {
+        "model": model_id, "prompt": prompt, "size": size,
+        "n": int(count), "seed": int(seed if seed is not None else -1),
+        "extra_body": extra,
+    }
+    started = time.monotonic()
     try:
-        record_id = history.new_record(
-            model_id, "edits" if mode == "图片编辑" else "generations",
-            prompt, {"size": size, "n": int(count), "seed": int(seed if seed is not None else -1),
-                     "extra_body": extra, "source": "gradio_ui"},
+        image_blobs = api_generate(
+            payload, hf_token,
+            image_paths=[str(path) for path in files] if mode == "图片编辑" else None,
         )
-    except (RuntimeError, OSError) as exc:
-        raise gr.Error("历史 Bucket 未就绪，请管理员检查 /data 挂载和标记文件。") from None
-    with tempfile.TemporaryDirectory(prefix="hf_studio_") as folder:
-        input_paths = []
-        if mode == "图片编辑":
-            for index, source in enumerate(files):
-                source = Path(source)
-                if source.stat().st_size > 10 * 1024 * 1024:
-                    raise gr.Error("单张图片最大 10MB")
-                with Image.open(source) as im:
-                    if im.width * im.height > 16_777_216:
-                        raise gr.Error("上传图片分辨率过大")
-                    target = Path(folder) / f"input_{index}.png"
-                    im.convert("RGB").save(target)
-                input_paths.append(str(target))
-                history.store_image(record_id, target.read_bytes(), input_image=True)
+    except StudioAPIError as exc:
+        logger.error("[studio-api] generation failed model=%s status=%s code=%s",
+                     model_id, exc.status, exc.code)
+        if exc.code == "upstream_quota_exceeded":
+            raise gr.Error(zerogpu_limit_error(
+                RuntimeError("ZeroGPU runs limit"), bool(hf_token))) from None
+        if exc.code == "history_storage_unavailable":
+            raise gr.Error("历史 Bucket 未就绪，请管理员检查 /data 读写挂载。") from None
+        raise gr.Error(f"API 图片生成失败：{exc.code}（HTTP {exc.status}），请查看 Space Logs。") from None
+    images = []
+    for index, png in enumerate(image_blobs):
         try:
-            for index in range(int(count)):
-                req = dict(kwargs)
-                if req["seed"] >= 0:
-                    req["seed"] += index
-                png = invoke(p, req, hf_token, image_paths=input_paths or None, ip_token=ip_token)
-                history.store_image(record_id, png)
-                images.append((Image.open(io.BytesIO(png)).copy(), f"第 {index + 1} 张 · {model_id}"))
-                messages.append(f"第 {index + 1} 张生成成功")
-        except Exception as e:
-            quota_hint = zerogpu_limit_error(e, bool(hf_token))
-            diagnostic = safe_upstream_error(e)
-            logger.error("Upstream failure model=%s status=%s error=%s",
-                         model_id, "quota_exceeded" if quota_hint else "upstream_failed", diagnostic)
-            if not images:
-                history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000),
-                                      "upstream_quota_exceeded" if quota_hint else "upstream_failed")
-                if quota_hint:
-                    raise gr.Error(quota_hint) from None
-                raise gr.Error(f"上游调用失败：{diagnostic}。请查看 Space Logs。") from None
-            messages.append(f"部分图片生成成功，后续失败：{quota_hint or diagnostic}")
-            history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000),
-                                  "partial_quota_exceeded" if quota_hint else "partial_failure")
-        else:
-            history.finish_record(record_id, "success", round((time.monotonic() - t0) * 1000))
-        return images, "\n".join(messages) + f"\n耗时 {time.monotonic()-t0:.1f} 秒"
+            with Image.open(io.BytesIO(png)) as image:
+                images.append((image.copy(), f"第 {index + 1} 张 · {model_id}"))
+        except (ValueError, OSError):
+            raise gr.Error("API 返回的图片无法预览，请检查生成结果。") from None
+    return images, f"已通过 OpenAI API 生成 {len(images)} 张图片\\n耗时 {time.monotonic() - started:.1f} 秒"
+
 
 def create_ui():
     opts = choices()
