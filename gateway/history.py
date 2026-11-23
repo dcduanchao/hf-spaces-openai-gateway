@@ -147,3 +147,25 @@ def delete_record(record_id: str) -> None:
     if not (directory / "record.json").is_file():
         raise KeyError(record_id)
     rmtree(directory)
+
+
+def delete_all_records() -> dict:
+    """Permanently remove every gateway history record and its image files.
+
+    Only touches gateway-history/<prefix>/<id> directories containing
+    record.json; does not remove unrelated objects in the bucket.
+    """
+    from shutil import rmtree
+    root = _ready()
+    deleted = 0
+    failed = 0
+    for record_file in root.glob("*/*/record.json"):
+        record_dir = record_file.parent
+        if not ID_RE.fullmatch(record_dir.name):
+            continue
+        try:
+            rmtree(record_dir)
+            deleted += 1
+        except OSError:
+            failed += 1
+    return {"deleted": deleted, "failed": failed}
