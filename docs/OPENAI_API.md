@@ -215,7 +215,7 @@ client.images.generate(
 )
 ```
 
-`seed` **不是官方 OpenAI Images 标准参数**，不应直接作为 `client.images.generate(seed=...)` 的关键字参数。不同模型的扩展字段不能混用，否则网关会返回 `400 invalid_parameters`。图片编辑接口采用 `multipart/form-data`，其 `extra_body` 字段必须是 JSON 字符串，不能发送 raw JSON。
+`seed` **不是官方 OpenAI Images 标准参数**，不应直接作为 `client.images.generate(seed=...)` 的关键字参数。不同模型的扩展字段不能混用，否则网关会返回 `400 invalid_parameters`。图片编辑接口兼容 `multipart/form-data`（上传图片文件，也支持额外传入 `image_url` 文本字段）和 `application/json`（通过 `image` / `image_urls` 传公开 HTTPS 图片 URL）。multipart 的 `extra_body` 是 JSON 字符串，而 raw JSON 的 `extra_body` 是 JSON 对象。
 
 ## HF Token 状态及 ZeroGPU 额度接口
 
@@ -356,57 +356,198 @@ python -c 'import json,base64; open("qwen.png","wb").write(base64.b64decode(json
 
 Python SDK 的 `extra_body` 通常会合并为 HTTP JSON 顶层字段；网关同时支持 HTTP JSON 内嵌 `extra_body` 对象。
 
-## 4. Qwen-Image-2.1 图片编辑
+## 4. Qwen-Image-2.1 图片编辑（单图、多图、公开 URL）
 
-网关的 `POST /v1/images/edits` 接收 **multipart/form-data**。支持 1–4 张 JPEG、PNG 或 WebP 参考图，每张不超过 10 MB。请求中的 `extra_body` 表单字段应为 JSON 字符串。
+**Endpoint：** `POST /v1/images/edits`。目前只有 **`qwen-image-2.1`** 支持图片编辑，`z-image-turbo` 不支持。
 
-### Python（OpenAI SDK，单图）
+同一个端点支持以下请求方式：
+
+| 用法 | Content-Type | 图片参数 | 支持数量 |
+|---|---|---|---|
+| OpenAI Python SDK 文件编辑 | `multipart/form-data` | `image` 文件 | 1～4 |
+| Postman 上传本地图片 | `multipart/form-data` | 重复 `image` File | 1～4 |
+| Postman 单个公开图片 URL | `application/json` | `"image": "https://..."` | 1 |
+| Postman 多个公开图片 URL | `application/json` | `"image_urls": ["https://...", ...]` | 1～4 |
+| 文件 + URL 混合 | `multipart/form-data` | `image` File 和 `image_url` Text | 合计 1～4 |
+
+可复制的 Markdown 表格：
+
+```markdown
+| 用法 | Content-Type | 图片参数 | 支持数量 |
+|---|---|---|---|
+| OpenAI Python SDK 文件编辑 | `multipart/form-data` | `image` 文件 | 1～4 |
+| Postman 上传本地图片 | `multipart/form-data` | 重复 `image` File | 1～4 |
+| Postman 单个公开图片 URL | `application/json` | `"image": "https://..."` | 1 |
+| Postman 多个公开图片 URL | `application/json` | `"image_urls": ["https://...", ...]` | 1～4 |
+| 文件 + URL 混合 | `multipart/form-data` | `image` File 和 `image_url` Text | 合计 1～4 |
+```
+
+通用编辑字段：`model`、`prompt`（必填）；`size`（默认 `1024x1024`）、`n`（1～4）、`seed`（默认 -1）、`response_format`（默认 `url`，可选 `b64_json`）、Qwen 专属 `negative_prompt`、`quality`、`custom_size`。
+
+### 4.1 Postman JSON：编辑一个公开图片 URL
+
+**Method：POST** · URL：`{{base_url}}/v1/images/edits`  
+Authorization：No Auth（匿名）  
+Headers：`Content-Type: application/json`  
+Body → raw → JSON：
+
+```json
+{
+  "model": "qwen-image-2.1",
+  "prompt": "保留人物姿态，将背景替换为樱花公园",
+  "image": "https://example.com/public/photo.png",
+  "size": "1024x1024",
+  "n": 1,
+  "seed": -1,
+  "response_format": "url",
+  "extra_body": {
+    "quality": "speed",
+    "negative_prompt": "blurry",
+    "custom_size": true
+  }
+}
+```
+
+**图片地址仅为占位示例，必须换成真实可公开访问的 HTTPS 图片直链。** 不接受浏览器登录后才能访问的私有文件 URL，也不接受本地 `file://`、内网地址。
+
+### 4.2 Postman JSON：多个公开图片 URL
+
+```json
+{
+  "model": "qwen-image-2.1",
+  "prompt": "结合第一张人物形象和第二张服装设计生成新图片",
+  "image_urls": [
+    "https://example.com/public/person.png",
+    "https://example.com/public/clothes.jpg"
+  ],
+  "size": "1024x1024",
+  "n": 1,
+  "seed": 42,
+  "response_format": "url",
+  "extra_body": {
+    "quality": "quality",
+    "negative_prompt": "blurry, distorted",
+    "custom_size": true
+  }
+}
+```
+
+还可以使用 `"image": ["https://...", "https://..."]` 或 `"images": ["https://...", "https://..."]`，但**不能在同一个 JSON 中同时使用 `image`、`images`、`image_urls`**。
+
+### 4.3 Python OpenAI SDK：单图文件编辑
 
 ```python
 import os
-import base64
-from pathlib import Path
 from openai import OpenAI
 
 client = OpenAI(
-    base_url=os.getenv("GATEWAY_BASE_URL", "https://duan0320-hf-spaces-openai-gateway.hf.space/v1"),
+    base_url="https://duan0320-hf-spaces-openai-gateway.hf.space/v1",
     api_key=os.getenv("HF_TOKEN", "anonymous"),
     timeout=300.0,
 )
-with open("input.png", "rb") as image:
+with open("input.png", "rb") as photo:
     result = client.images.edit(
         model="qwen-image-2.1",
-        response_format="b64_json",
-        image=image,
-        prompt="保留主体，将背景替换为樱花盛开的公园，写实风格",
+        image=photo,
+        prompt="把背景改成海边落日，保留主体",
         size="1024x1024",
         n=1,
+        response_format="url",
     )
-Path("qwen-edit.png").write_bytes(base64.b64decode(result.data[0].b64_json))
-print("已保存 qwen-edit.png")
+print(result.data[0].url)
 ```
 
-### cURL（设置专属参数、Seed）
+### 4.4 Python OpenAI SDK：多张本地文件
+
+```python
+from contextlib import ExitStack
+
+with ExitStack() as stack:
+    images = [
+        stack.enter_context(open("person.png", "rb")),
+        stack.enter_context(open("clothes.png", "rb")),
+    ]
+    result = client.images.edit(
+        model="qwen-image-2.1",
+        image=images,
+        prompt="参考第一张人物，穿上第二张图片中的服装",
+        size="1024x1024",
+        response_format="url",
+    )
+print(result.data[0].url)
+```
+
+多图作为同名 `image` 文件上传，上游 Qwen 按图片输入顺序处理。多图 SDK 示例要求所用 OpenAI Python SDK 版本支持 `image` 文件列表。
+
+### 4.5 Python：公开 URL 多图 JSON 编辑
+
+官方 OpenAI SDK 的 `images.edit(image=...)` 通常会构建 multipart 文件请求。若只持有图片 URL，可以通过 `httpx` 直接调用本项目扩展的 JSON 编辑入口：
+
+```python
+import os
+import httpx
+
+url = "https://duan0320-hf-spaces-openai-gateway.hf.space/v1/images/edits"
+headers = {}
+if os.getenv("HF_TOKEN"):
+    headers["X-HF-Token"] = os.environ["HF_TOKEN"]
+
+response = httpx.post(
+    url,
+    headers=headers,
+    json={
+        "model": "qwen-image-2.1",
+        "prompt": "参考第一张人物和第二张服装，生成一张完整照片",
+        "image_urls": [
+            "https://example.com/public/person.png",
+            "https://example.com/public/clothes.png"
+        ],
+        "size": "1024x1024",
+        "response_format": "url",
+        "extra_body": {"quality": "speed"}
+    },
+    timeout=300.0
+)
+response.raise_for_status()
+print(response.json()["data"][0]["url"])
+```
+
+### 4.6 cURL：上传两张图片
 
 ```bash
 curl -sS "$GATEWAY_BASE_URL/images/edits" \
-  -H "X-HF-Token: $HF_TOKEN" \
   -F "model=qwen-image-2.1" \
-  -F "prompt=保留人物姿态，将背景改为海边日落" \
-  -F "image=@input.png;type=image/png" \
+  -F "prompt=结合两张参考图片进行编辑" \
+  -F "image=@person.png;type=image/png" \
+  -F "image=@clothes.jpg;type=image/jpeg" \
   -F "size=1024x1024" \
   -F "n=1" \
-  -F "response_format=b64_json" \
   -F "seed=42" \
-  -F 'extra_body={"quality":"speed","negative_prompt":"blurry","custom_size":true}' \
-  > edit-response.json
-
-python -c 'import json,base64; open("qwen-edit.png","wb").write(base64.b64decode(json.load(open("edit-response.json"))["data"][0]["b64_json"]))'
+  -F "response_format=url" \
+  -F 'extra_body={"quality":"speed","negative_prompt":"blurry","custom_size":true}'
 ```
 
-多张参考图片时，额外重复 `-F "image=@reference2.png;type=image/png"`，总数最多 4 张。图片编辑可能被上游的安全分类器拒绝，具体取决于上游 Space。
+### 4.7 cURL / Postman：本地文件 + 公共 URL 混合
 
-> 注意：本项目已修复专用 Qwen 适配器在 `/v1/images/edits` 入口被传统 bindings 检查错误拦截的问题。该修复不改变上游空间自身的可用性或策略。
+```bash
+curl -sS "$GATEWAY_BASE_URL/images/edits" \
+  -F "model=qwen-image-2.1" \
+  -F "prompt=以第一张为人物，参考第二张的风格" \
+  -F "image=@person.png;type=image/png" \
+  -F "image_url=https://example.com/public/style.png" \
+  -F "response_format=url"
+```
+
+Postman 选择 Body → **form-data**：`image` 设置为 File，`image_url` 设置为 Text。重复使用同名 `image` 和 `image_url` 可以提供多个输入，合计最多 4 张。**multipart 不要手动填写 Content-Type**，交给 Postman 设置 boundary。
+
+### 4.8 图片校验、失败处理及历史
+
+- 远程 URL 只接受公开 **HTTPS（443）**；拒绝 localhost、内网 IP、保留地址、含凭据的 URL；所有重定向目标都重新检查，并限制重定向次数。
+- 单张上传/远程图片不超过 **10 MB**，最多 **16777216 像素**；仅 PNG、JPEG、WebP。网关会下载、校验并统一转换成 PNG，然后发给 Qwen。
+- 所有参考图和生成结果会保存到私有 HF Bucket，并进入管理员历史记录；**请勿将不愿长期保存的私密图片上传到公开服务**。
+- `400 invalid_image`：图片 URL 不可达、地址不安全、格式无效、文件超限；`400 invalid_image_count`：图片数量不在 1～4。
+- `400 unsupported_mode`：模型不支持编辑；`429 upstream_quota_exceeded`：可识别的上游额度不足；`502 upstream_failed`：其他上游调用失败。
+- 返回 `url` 为网关临时公开链接（默认有效期 30 分钟），持久图片留在私有 Bucket 中供管理员查看。
 
 ## 5. Z-Image-Turbo 文生图
 
@@ -536,7 +677,7 @@ X-HF-Token: {{hf_token}}
 
 ### 6.5 Qwen-Image-2.1：图片编辑（form-data）
 
-图片上传接口不是 JSON，Postman 必须设置 **Body → form-data**；不要手动设置 `Content-Type`，让 Postman 自动设置 multipart boundary。
+上传本地文件时请选择 **Body → form-data**；纯公开图片 URL 请使用 **Body → raw → JSON**（示例见 4.1、4.2）。multipart 不要手动设置 `Content-Type`，让 Postman 自动设置 multipart boundary。
 
 | Key | Type | Value |
 |---|---|---|
