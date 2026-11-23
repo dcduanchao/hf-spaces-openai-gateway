@@ -337,7 +337,7 @@ async def edit(request: Request, authorization: str | None = Header(default=None
         raise
 
     profile = profile_for(body.model, "edits")
-    if profile.adapter != "qwen_image" and not ("images" in profile.bindings or "image" in profile.bindings):
+    if profile.adapter not in ("qwen_image", "viggle_turbo") and not ("images" in profile.bindings or "image" in profile.bindings):
         err(400, "unsupported_edit", "Model has no image input binding")
 
     with tempfile.TemporaryDirectory(prefix="hf_edit_") as folder:
