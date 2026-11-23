@@ -6,6 +6,7 @@ names instead of silently hardcoding the official app's API for an unknown fork.
 from __future__ import annotations
 import json
 import logging
+import secrets
 from gradio_client import Client, handle_file
 
 
@@ -62,12 +63,18 @@ def run(profile, payload, token, image_paths=None):
             except ValueError as e:
                 raise ValueError(f"{key}: {e}") from e
 
+    requested_seed = int(payload.get("seed", -1))
+    if requested_seed < -1:
+        raise ValueError("seed 必须是 -1（随机）或非负整数")
+    actual_seed = secrets.randbelow(2**31 - 1) if requested_seed == -1 else requested_seed
+    logger.info("Qwen seed normalized: random=%s", requested_seed == -1)
+
     values = {
         "prompt": payload["prompt"], "original_prompt": payload["prompt"],
         "text": payload["prompt"], "input_prompt": payload["prompt"],
         "width": w, "height": h,
-        "seed": int(payload.get("seed", -1)),
-        "randomize_seed": int(payload.get("seed", -1)) < 0,
+        "seed": actual_seed,
+        "randomize_seed": False,
         "negative_prompt": extras.get("negative_prompt", ""),
         "enable_extend": extras.get("enable_extend", False),
         "quality": extras.get("quality", "speed"),
