@@ -258,9 +258,9 @@ def create_ui():
                         label="画风预设（图片编辑）", visible=False)
                     reset_prompt = gr.Button("重置组合提示词", visible=False, size="sm")
                 prompt = gr.Textbox(label="提示词（Prompt）", lines=8, max_lines=16,
-                    show_copy_button=True,
                     placeholder="文生图：输入画面描述；图片编辑：确认添加参考图后自动生成，可继续修改……")
                 automatic_prompt = gr.State(True)
+                copy_prompt = gr.Button("复制提示词", size="sm")
                 with gr.Row():
                     model = gr.Dropdown(choices=opts, value=default_id,
                         label="当前可用模型", interactive=True)
@@ -350,6 +350,10 @@ def create_ui():
         reset_prompt.click(reset_edit_prompt,
             inputs=[mode, source, confirmed_files, prompt_style],
             outputs=[prompt, automatic_prompt], api_visibility="private")
+        copy_prompt.click(
+            fn=None, inputs=[prompt], outputs=[],
+            js="(text) => navigator.clipboard.writeText(text)",
+            api_visibility="private")
         refresh.click(refresh_models, outputs=[model, info], api_visibility="private")
         run.click(generate,
             inputs=[mode, model, prompt, source, size, count, seed, token, extra],
