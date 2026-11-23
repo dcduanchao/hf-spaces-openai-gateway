@@ -95,7 +95,7 @@ async def edit(model: str = Form(...), prompt: str = Form(...), image: list[Uplo
     import json
     token = authorize(authorization)
     profile = profile_for(model, "edits")
-    if not ("images" in profile.bindings or "image" in profile.bindings):
+    if profile.adapter != "qwen_image" and not ("images" in profile.bindings or "image" in profile.bindings):
         err(400, "unsupported_edit", "Model has no image input binding")
     try:
         extras = json.loads(extra_body)
