@@ -60,6 +60,18 @@ class HistoryTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             history.new_record("z-image-turbo", "generations", "cat", {})
 
+    def test_admin_modal_ui_is_present_without_exposing_records(self):
+        response = self.client.get("/admin/")
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        self.assertIn('id="record-modal"', html)
+        self.assertIn('id="lightbox"', html)
+        self.assertIn("modal.showModal()", html)
+        self.assertIn('id="output-images"', html)
+        self.assertIn('id="input-images"', html)
+        self.assertNotIn("ADMIN_API_KEY_VALUE", html)
+        self.assertIn("no-store", response.headers["cache-control"])
+
     def test_unauthorized_image_download(self):
         rid = history.new_record("z-image-turbo", "generations", "cat", {})
         name = history.store_image(rid, b"sample")
