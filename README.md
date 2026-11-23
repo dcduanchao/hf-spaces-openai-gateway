@@ -39,6 +39,10 @@ pinned: false
 
 Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 OpenAI HTTP API（`127.0.0.1:7860`），网页不再直接创建上游 ZeroGPU Client。网页填写的 HF Token 通过 `X-HF-Token` 逐请求传给 API，后续身份和上游推理处理与 Postman/API 调用一致。文生图走 `/v1/images/generations`，确认选入上传框的多图编辑走 `/v1/images/edits`，图片顺序不变。API 统一负责历史记录与参考图/生成图的 Bucket 保存，不会因 UI 和 API 双重记录。
 
+## Viggle Turbo 对外模型 ID
+
+Viggle Turbo v0.3 的公开模型 ID 为 `qwen-image-2.1-6`（原 ID `qwen-image-2.1-viggle-turbo` 已替换）。`GET /v1/models`、`GET /v1/models/detail` 和网页工作室统一显示新 ID；文生图及编辑请求均使用 `"model": "qwen-image-2.1-6"`。上游仍是 `Viggle/Qwen-Image-2.1-viggle-turbo` 的 `/generate` 接口，默认 6 步、固定 v0.3。原有 Qwen Image 2.1 与 Z-Image-Turbo 均不变。
+
 ## 接口
 
 - `GET /health`
