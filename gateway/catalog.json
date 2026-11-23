@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "id": "qwen-image-2.1",
+      "space_id": "duan0320/Qwen-Image-2.1",
+      "api_name": null,
+      "enabled": false,
+      "description": "示例占位。先运行 inspect_space.py 获取真实 API，再配置 endpoint、bindings 和 result_path，最后启用。",
+      "modes": ["generations"],
+      "default_size": "1024x1024",
+      "allowed_sizes": ["1024x1024", "1024x768", "768x1024"],
+      "bindings": {
+        "prompt": "prompt",
+        "width": "width",
+        "height": "height",
+        "seed": "seed"
+      },
+      "extras": {},
+      "result_path": [0]
+    }
+  ]
+}
