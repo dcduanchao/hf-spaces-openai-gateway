@@ -37,6 +37,24 @@ def safe_upstream_error(exc):
     return f'{type(exc).__name__}: {message[:450]}'
 
 
+def zerogpu_limit_error(exc: Exception, supplied_token: bool) -> str | None:
+    """Give actionable quota guidance without leaking credentials or raw URLs."""
+    raw = str(exc).lower()
+    if any(term in raw for term in (
+        "zerogpu runs limit", "zero gpu", "zerogpu", "runs limit",
+        "run limit", "quota exceeded", "gpu seconds", "daily limit",
+        "no gpu time", "too many requests",
+    )):
+        identity = "当前所填 HF Token 对应账号" if supplied_token else "匿名调用"
+        return (
+            f"{identity}的 ZeroGPU 运行额度或次数已达上限。"
+            + ("请验证 Token 是否有效、查询剩余额度；如已用尽，请等额度重置。" if supplied_token
+               else "无痕模式不会自动登录 Hugging Face，请在上方填写自己的 hf_ Token，先验证再生成。")
+            + " 已填 Token 也不能绕过账号额度限制。"
+        )
+    return None
+
+
 CSS = """
 .gradio-container {max-width: 1060px !important; margin: auto !important;}
 #studio-hero {text-align:center; padding:12px 0 16px;}
@@ -168,6 +186,8 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
     except (ValueError, TypeError) as e:
         raise gr.Error(f"模型扩展参数 JSON 错误：{e}") from None
     hf_token = (token or "").strip() or None
+    if hf_token and not re.fullmatch(r"hf_[A-Za-z0-9_]+", hf_token):
+        raise gr.Error("HF Token 格式不正确，请填写 hf_ 开头的个人访问令牌。")
     # The UI uses only the token explicitly entered by the visitor. It does NOT
     # silently spend the server owner's UPSTREAM_HF_TOKEN quota.
     kwargs = {"model": model_id, "prompt": prompt, "size": size,
@@ -208,13 +228,19 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
                 images.append((Image.open(io.BytesIO(png)).copy(), f"第 {index + 1} 张 · {model_id}"))
                 messages.append(f"第 {index + 1} 张生成成功")
         except Exception as e:
+            quota_hint = zerogpu_limit_error(e, bool(hf_token))
             diagnostic = safe_upstream_error(e)
-            logger.error("Qwen upstream failure model=%s error=%s", model_id, diagnostic)
+            logger.error("Upstream failure model=%s status=%s error=%s",
+                         model_id, "quota_exceeded" if quota_hint else "upstream_failed", diagnostic)
             if not images:
-                history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000), "upstream_failed")
+                history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000),
+                                      "upstream_quota_exceeded" if quota_hint else "upstream_failed")
+                if quota_hint:
+                    raise gr.Error(quota_hint) from None
                 raise gr.Error(f"上游调用失败：{diagnostic}。请查看 Space Logs。") from None
-            messages.append(f"部分图片生成成功，后续失败：{diagnostic}")
-            history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000), "partial_failure")
+            messages.append(f"部分图片生成成功，后续失败：{quota_hint or diagnostic}")
+            history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000),
+                                  "partial_quota_exceeded" if quota_hint else "partial_failure")
         else:
             history.finish_record(record_id, "success", round((time.monotonic() - t0) * 1000))
         return images, "\n".join(messages) + f"\n耗时 {time.monotonic()-t0:.1f} 秒"
@@ -275,13 +301,13 @@ def create_ui():
                 with gr.Row():
                     count = gr.Slider(1, 4, value=1, step=1, label="生成数量")
                     seed = gr.Number(-1, precision=0, label="Seed（-1 随机）")
-                with gr.Accordion("Hugging Face Token（可选）", open=True):
+                with gr.Accordion("Hugging Face Token（无痕模式和 API 均可使用）", open=True):
                     token = gr.Textbox(type="password", label="HF Token",
-                        placeholder="留空匿名；填写 hf_... 使用你的 ZeroGPU 额度")
+                        placeholder="hf_...（无痕模式请在此填写，关闭窗口后不会自动保留）")
                     quota_button = gr.Button("验证 Token / 查询 ZeroGPU 可用时长", size="sm")
                     quota_status = gr.Markdown("输入 HF Token 后点击查询，可查看剩余额度及下次重置时间。")
                     quota_button.click(token_quota_info, inputs=[token], outputs=[quota_status], api_visibility="private", concurrency_limit=2)
-                    gr.Markdown("Token 仅用于当前请求；额度查询不会保存或打印 Token。")
+                    gr.Markdown("**无痕浏览器不会继承 Hugging Face 登录状态。** 输入个人 HF Token 后点击验证，再生成图片，使用该账号的 ZeroGPU 额度。API 请在每次请求头中携带 `X-HF-Token: hf_...` 或 `Authorization: Bearer hf_...`。Token 不保存到历史记录、浏览器存储或日志；有效 Token 也受账号运行次数和额度限制。")
                 with gr.Accordion("模型专属参数 · JSON", open=False):
                     extra = gr.Code(value="{}", language="json", label="extra_body（由不同 Space 解释）", lines=6)
                     gr.Markdown("例如 `{\"negative_prompt\": \"blurry\"}`，实际可用参数由该 Space 的接口决定。")
