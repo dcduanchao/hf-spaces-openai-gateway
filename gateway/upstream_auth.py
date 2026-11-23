@@ -10,9 +10,19 @@ Never persist or log the header value. Authorization remains caller-owned.
 from __future__ import annotations
 
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Keep an upper bound and reject embedded control characters before forwarding.
 SAFE_HEADER = re.compile(r"^[\x21-\x7e]{1,2048}$")
+
+
+def token_tail(token: str | None) -> str:
+    """Diagnostic display only: never log complete HF credentials."""
+    if not token:
+        return "none"
+    return "****" + token[-4:]
 
 
 def forward_headers(ip_token: str | None) -> dict[str, str]:
@@ -36,4 +46,6 @@ def client_kwargs(token: str | None, ip_token: str | None) -> dict:
         headers = forward_headers(ip_token)
         if headers:
             kwargs["headers"] = headers
+    logger.info("[hf-auth] upstream_client hf_token=%s auth_mode=%s",
+                token_tail(token), "hf_token" if token else ("edge_identity" if "headers" in kwargs else "anonymous"))
     return kwargs
