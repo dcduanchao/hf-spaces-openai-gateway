@@ -356,6 +356,14 @@ python -c 'import json,base64; open("qwen.png","wb").write(base64.b64decode(json
 
 Python SDK 的 `extra_body` 通常会合并为 HTTP JSON 顶层字段；网关同时支持 HTTP JSON 内嵌 `extra_body` 对象。
 
+### 网页工作室：使用 AI 姿势参考图库
+
+图片工作室的 **「图片编辑」→「姿势参考图库」** 可通过中文关键词搜索 [AI 姿势图库中文版](https://github.com/anhao/ai-pose-gallery-zh) 的普通姿势，点击预览图加入参考输入。它与上传的本地图片合计最多 4 张，随后像正常图片编辑一样填写提示词并生成。
+
+图库资源**不包含在本项目的 MIT 授权内**；原仓库说明图片版权归各素材原作者所有并有限制商业使用的条款。本集成不会打包或批量保存这些图片，仅在用户主动选择并发起生成时读取，所选参考图及生成结果随后按照本项目已有的私有历史规则保存到 HF Bucket。用户须确保其使用和保存行为符合来源授权。此版本默认隐藏成人向姿势分类。
+
+这项功能只在 **Gradio 网页 UI** 中增加图像选取器，**不会更改 OpenAI API**：通过 `POST /v1/images/edits` 传公开 HTTPS 图片 URL 的既有调用方式仍然可用。
+
 ## 4. Qwen-Image-2.1 图片编辑（单图、多图、公开 URL）
 
 **Endpoint：** `POST /v1/images/edits`。目前只有 **`qwen-image-2.1`** 支持图片编辑，`z-image-turbo` 不支持。
