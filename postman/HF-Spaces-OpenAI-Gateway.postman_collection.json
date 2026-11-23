@@ -62,7 +62,7 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"model\": \"qwen-image-2.1\",\n  \"prompt\": \"A cute cat sitting by a sunny window\",\n  \"size\": \"1024x1024\",\n  \"n\": 1,\n  \"response_format\": \"b64_json\",\n  \"seed\": 42,\n  \"extra_body\": {\n    \"negative_prompt\": \"blurry, low quality\",\n    \"quality\": \"speed\",\n    \"custom_size\": true\n  }\n}",
+          "raw": "{\n  \"model\": \"qwen-image-2.1\",\n  \"prompt\": \"A cute cat sitting by a sunny window\",\n  \"size\": \"1024x1024\",\n  \"n\": 1,\n  \"response_format\": \"url\",\n  \"seed\": 42,\n  \"extra_body\": {\n    \"negative_prompt\": \"blurry, low quality\",\n    \"quality\": \"speed\",\n    \"custom_size\": true\n  }\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -98,7 +98,7 @@
         },
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"model\": \"z-image-turbo\",\n  \"prompt\": \"A futuristic city at sunrise, cinematic photo\",\n  \"size\": \"1024x1024\",\n  \"n\": 1,\n  \"response_format\": \"b64_json\",\n  \"seed\": -1,\n  \"extra_body\": {\n    \"steps\": 9\n  }\n}",
+          "raw": "{\n  \"model\": \"z-image-turbo\",\n  \"prompt\": \"A futuristic city at sunrise, cinematic photo\",\n  \"size\": \"1024x1024\",\n  \"n\": 1,\n  \"response_format\": \"url\",\n  \"seed\": -1,\n  \"extra_body\": {\n    \"steps\": 9\n  }\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -163,6 +163,11 @@
             {
               "key": "extra_body",
               "value": "{\"quality\":\"speed\",\"negative_prompt\":\"blurry\",\"custom_size\":true}",
+              "type": "text"
+            },
+            {
+              "key": "response_format",
+              "value": "url",
               "type": "text"
             }
           ]
