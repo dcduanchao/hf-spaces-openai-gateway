@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 # Keep an upper bound and reject embedded control characters before forwarding.
 SAFE_HEADER = re.compile(r"^[\x21-\x7e]{1,2048}$")
