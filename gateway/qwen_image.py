@@ -13,6 +13,7 @@ import secrets
 from gradio_client import Client, handle_file
 from .models import validate_extra
 from .upstream_logging import predict_logged
+from .upstream_auth import client_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +89,11 @@ def build_requests(profile, payload, image_paths=None):
     return prepare, generate
 
 
-def run(profile, payload, token, image_paths=None):
+def run(profile, payload, token, image_paths=None, ip_token=None):
     from .adapter import select_result, result_bytes
 
     prepare, generate = build_requests(profile, payload, image_paths)
-    client = Client(profile.space_id, token=token or False, verbose=False)
+    client = Client(profile.space_id, **client_kwargs(token, ip_token))
     try:
         logger.info("Qwen call /prepare_request (seed nonnegative; %d image(s))", len(prepare["input_images"]))
         prepared = predict_logged(client, space_id=profile.space_id, api_name="/prepare_request", kwargs=prepare)
