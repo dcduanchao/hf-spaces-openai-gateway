@@ -10,6 +10,7 @@ from gradio_client import Client, handle_file
 from PIL import Image
 from .models import Profile, validate_extra
 from .upstream_logging import predict_logged
+from .upstream_auth import client_kwargs
 
 
 def parse_size(size: str, profile: Profile) -> tuple[int, int]:
@@ -120,15 +121,15 @@ def result_bytes(value, profile: Profile) -> bytes:
         return output.getvalue()
 
 
-def invoke(profile: Profile, payload: dict, token: str | None, image_paths=None) -> bytes:
+def invoke(profile: Profile, payload: dict, token: str | None, image_paths=None, ip_token=None) -> bytes:
     if profile.adapter == "qwen_image":
         from .qwen_image import run
-        return run(profile, payload, token, image_paths)
+        return run(profile, payload, token, image_paths, ip_token=ip_token)
     if profile.adapter == "z_image":
         from .z_image import run
         return run(profile, payload, token, image_paths)
     kwargs = make_kwargs(profile, payload, image_paths)
-    client = Client(profile.space_id, token=token or False, verbose=False)
+    client = Client(profile.space_id, **client_kwargs(token, ip_token))
     try:
         result = predict_logged(client, space_id=profile.space_id, api_name=profile.api_name, kwargs=kwargs)
         return result_bytes(select_result(result, profile.result_path), profile)
