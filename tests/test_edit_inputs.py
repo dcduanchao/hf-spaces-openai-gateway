@@ -49,6 +49,60 @@ class EditUrlTests(unittest.TestCase):
         self.assertEqual(len(record["input_images"]), 1)
         self.assertEqual(len(record["images"]), 1)
 
+    def test_pose_gallery_object_images_and_singular_alias(self):
+        from gateway.adapter import parse_size
+        from gateway.models import load_profiles
+        payload = self.payload(
+            images=[
+                {"image_url": "https://ga.du-ai.top/img/portrait/f009cba9893.webp"},
+                {"image_url": "https://ga.du-ai.top/img/costume/SUM-0007.webp"},
+                {"image_url": "https://ga.du-ai.top/img/full_single_P009_low.png"},
+            ],
+            size="1024x1536",
+            quality="high",
+            input_fidelity="high",
+            output_format="png",
+        )
+        with patch("gateway.main.download_public_image", return_value=tiny_png()) as get:
+            with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
+                response = self.client.post("/v1/images/edit", json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(get.call_count, 3)
+        sent = invoke.call_args.args[1]
+        self.assertEqual(sent["size"], "1024x1536")
+        self.assertEqual(sent["extra_body"]["quality"], "quality")
+        self.assertNotIn("input_fidelity", sent["extra_body"])
+        self.assertNotIn("output_format", sent["extra_body"])
+        self.assertEqual(len(invoke.call_args.kwargs["image_paths"]), 3)
+        self.assertEqual(parse_size("1024x1536", load_profiles()["qwen-image-2.1"]), (1024, 1536))
+
+    def test_singular_url_object(self):
+        with patch("gateway.main.download_public_image", return_value=tiny_png()):
+            with patch("gateway.main.invoke", return_value=tiny_png()):
+                response = self.client.post("/v1/images/edit", json=self.payload(
+                    image={"image_url": "https://example.org/public/reference.png"}))
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_unsafe_or_unsupported_options(self):
+        source = {"images": [{"image_url": "https://example.org/one.png"}]}
+        for setting in ({"output_format": "jpeg"}, {"input_fidelity": "ultra"}):
+            with self.subTest(setting=setting):
+                response = self.client.post("/v1/images/edit", json=self.payload(**source, **setting))
+                self.assertEqual(response.status_code, 400, response.text)
+        response = self.client.post("/v1/images/edit", json=self.payload(
+            images=[{"image_url": "https://example.org/a.png", "secret": "bad"}]))
+        self.assertEqual(response.status_code, 400, response.text)
+
+    def test_custom_size_validation(self):
+        from gateway.adapter import parse_size
+        from gateway.models import load_profiles
+        profile = load_profiles()["qwen-image-2.1"]
+        self.assertEqual(parse_size("1024x1536", profile), (1024, 1536))
+        self.assertEqual(parse_size("1200x1600", profile), (1200, 1600))
+        for size in ("10x10", "8192x8192", "hello", "0x1024", "1024x10000"):
+            with self.subTest(size=size), self.assertRaises(ValueError):
+                parse_size(size, profile)
+
     def test_multiple_public_urls(self):
         urls = ["https://images.example.org/one.png", "https://images.example.org/two.png"]
         with patch("gateway.main.download_public_image", return_value=tiny_png()) as get:
