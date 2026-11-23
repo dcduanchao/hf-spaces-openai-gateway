@@ -26,7 +26,7 @@ class IdentityForwardingTests(unittest.TestCase):
         payload = {"model": "z-image-turbo", "prompt": "cat", "size": "1024x1024"}
         with patch("gateway.z_image.Client") as client:
             with patch("gateway.z_image.predict_logged", return_value=["some/file.png", 42]):
-                with patch("gateway.adapter.result_bytes", return_value=b"png") as extract:
+                with patch("gateway.z_image.result_bytes", return_value=b"png"):
                     result = z_image.run(profile, payload, "hf_PROUSER123", ip_token="signed-edge-token")
         self.assertEqual(result, b"png")
         kwargs = client.call_args.kwargs
