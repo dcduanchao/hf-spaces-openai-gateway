@@ -20,7 +20,7 @@ def require_admin(x_admin_key: str | None):
 
 @router.get("/api/history")
 def history_list(model: str | None = None, status: str | None = None,
-                 limit: int = 30, offset: int = 0, x_admin_key: str | None = Header(None)):
+                 limit: int = 20, offset: int = 0, x_admin_key: str | None = Header(None)):
     require_admin(x_admin_key)
     try:
         return history.list_records(model=model, status=status, limit=limit, offset=max(0, offset))
@@ -54,6 +54,18 @@ def history_image(record_id: str, filename: str, x_admin_key: str | None = Heade
                         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
+@router.delete("/api/history")
+def history_delete_all(x_confirm_delete: str | None = Header(None),
+                       x_admin_key: str | None = Header(None)):
+    require_admin(x_admin_key)
+    if x_confirm_delete != "DELETE_ALL_HISTORY":
+        raise HTTPException(400, detail="Provide X-Confirm-Delete: DELETE_ALL_HISTORY")
+    try:
+        return history.delete_all_records()
+    except RuntimeError as exc:
+        raise HTTPException(503, detail=str(exc)) from exc
+
+
 @router.delete("/api/history/{record_id}")
 def history_delete(record_id: str, x_admin_key: str | None = Header(None)):
     require_admin(x_admin_key)
@@ -80,14 +92,15 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f7f8f
 header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 input,select,button{padding:10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
 button{cursor:pointer;background:#1c64f2;color:white;border:0}
-button.danger{background:#c02929}
+button.danger{background:#c02929}\nbutton:disabled{opacity:.42;cursor:not-allowed}
 button.secondary{background:#e2e8f0;color:#17202a}
 button:focus-visible,a:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
 section{background:white;padding:16px;border:1px solid #e2e8f0;border-radius:12px;margin-top:16px}
 .table-scroll{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{text-align:left;padding:10px;border-bottom:1px solid #eee}
-td.prompt{max-width:320px;overflow-wrap:anywhere}
+td.prompt{width:32%;max-width:320px}
+.prompt-preview{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;max-height:2.9em;line-height:1.45;overflow-wrap:anywhere;white-space:normal}
 small,.muted{color:#64748b}
 .pager{display:flex;gap:8px;align-items:center;margin-top:14px}
 dialog{border:0;border-radius:16px;padding:0;width:min(1000px,96vw);max-height:92vh;max-height:92dvh;box-shadow:0 24px 80px #0005;color:#17202a;background:white}
@@ -115,7 +128,7 @@ dialog::backdrop{background:rgba(13,21,36,.7)}
 <select id="model"><option value="">全部模型</option><option value="qwen-image-2.1">Qwen Image 2.1</option><option value="z-image-turbo">Z-Image-Turbo</option></select>
 <select id="status"><option value="">全部状态</option><option value="success">成功</option><option value="failed">失败</option><option value="running">执行中</option></select>
 <button id="search">查询历史</button> <span id="info" role="status"></span></section>
-<section><div class="table-scroll"><table><thead><tr><th>日期</th><th>模型</th><th>状态</th><th>耗时</th><th>提示词</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div>
+<section><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px"><strong>历史记录</strong><button class="danger" id="delete-all" type="button">删除全部历史</button></div><div class="table-scroll"><table><thead><tr><th>日期</th><th>模型</th><th>状态</th><th>耗时</th><th>提示词</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div>
 <div class="pager"><button class="secondary" id="prev">上一页</button><button class="secondary" id="next">下一页</button><small id="page"></small></div></section>
 <dialog id="record-modal" aria-labelledby="modal-title">
   <div class="dialog-head"><h2 id="modal-title">历史记录详情</h2><button class="secondary" id="close-modal" aria-label="关闭详情弹窗">关闭 ✕</button></div>
@@ -131,7 +144,7 @@ dialog::backdrop{background:rgba(13,21,36,.7)}
   <div class="lightbox-body"><img id="lightbox-image" alt="放大图片预览"></div>
 </dialog>
 <script>
-let offset=0,total=0,urls=[],detailGeneration=0;
+let offset=0,total=0,urls=[],detailGeneration=0;\nconst PAGE_SIZE=20;
 const el=id=>document.getElementById(id);
 const key=()=>el('key').value;
 const modal=el('record-modal'),lightbox=el('lightbox');
@@ -157,17 +170,23 @@ function closeModal(){
 function cell(row,text){const x=document.createElement('td');x.textContent=String(text??'');row.appendChild(x);return x}
 async function load(){
  try{
-  const q=new URLSearchParams({limit:'30',offset:String(offset)});
+  const q=new URLSearchParams({limit:String(PAGE_SIZE),offset:String(offset)});
   if(el('model').value)q.set('model',el('model').value);
   if(el('status').value)q.set('status',el('status').value);
   const data=await(await request('/admin/api/history?'+q)).json();total=data.total;
   el('info').textContent='共 '+total+' 条';
-  el('page').textContent=total?'显示 '+(offset+1)+'–'+Math.min(offset+data.items.length,total)+' / '+total:'暂无记录';
+  el('page').textContent=total?'第 '+(Math.floor(offset/PAGE_SIZE)+1)+' / '+Math.ceil(total/PAGE_SIZE)+' 页 · 显示 '+(offset+1)+'–'+Math.min(offset+data.items.length,total)+' / '+total:'暂无记录';
+  el('prev').disabled=offset===0;
+  el('next').disabled=offset+PAGE_SIZE>=total;
+  el('delete-all').disabled=total===0;
   el('rows').replaceChildren();
   for(const item of data.items){
    const row=document.createElement('tr');
    cell(row,item.created_at);cell(row,item.model);cell(row,item.status);cell(row,item.duration_ms===null?'-':item.duration_ms+' ms');
-   cell(row,item.prompt).className='prompt';
+   const promptCell=cell(row,'');promptCell.className='prompt';
+   const preview=document.createElement('div');preview.className='prompt-preview';
+   const full=String(item.prompt??'');preview.textContent=full.length>110?full.slice(0,110)+'…':full;
+   preview.title='点击查看可阅读完整提示词';promptCell.append(preview);
    const ops=document.createElement('td'),view=document.createElement('button');view.textContent='查看';view.onclick=()=>details(item.id);
    const del=document.createElement('button');del.textContent='删除';del.className='danger';del.style.marginLeft='6px';
    del.onclick=()=>remove(item.id);ops.append(view,del);row.append(ops);el('rows').append(row);
@@ -219,8 +238,24 @@ async function remove(id){
  catch(e){alert(e.message)}
 }
 el('search').onclick=()=>{offset=0;load()};
-el('prev').onclick=()=>{offset=Math.max(0,offset-30);load()};
-el('next').onclick=()=>{if(offset+30<total){offset+=30;load()}};
+el('prev').onclick=()=>{offset=Math.max(0,offset-PAGE_SIZE);load()};
+el('next').onclick=()=>{if(offset+PAGE_SIZE<total){offset+=PAGE_SIZE;load()}};
+async function removeAll(){
+ if(total===0)return;
+ if(!confirm('警告：这会删除全部历史记录及存储在私有 Bucket 中的所有关联图片，不仅是本页或当前筛选结果。此操作不可撤销。确定继续？'))return;
+ const typed=prompt('最终确认：请输入「删除全部」才能执行永久删除。');
+ if(typed!=='删除全部')return;
+ const button=el('delete-all');button.disabled=true;button.textContent='正在删除…';
+ try{
+  const data=await(await request('/admin/api/history',{
+   method:'DELETE',headers:{'X-Confirm-Delete':'DELETE_ALL_HISTORY'}
+  })).json();
+  closeModal();offset=0;await load();
+  alert('批量删除完成：成功 '+data.deleted+' 条，失败 '+data.failed+' 条。');
+ }catch(e){alert('删除失败：'+e.message)}
+ finally{button.textContent='删除全部历史';button.disabled=total===0}
+}
+el('delete-all').onclick=removeAll;
 el('close-modal').onclick=closeModal;
 el('close-lightbox').onclick=closeLightbox;
 modal.addEventListener('close',()=>{detailGeneration++;closeLightbox();cleanup()});
