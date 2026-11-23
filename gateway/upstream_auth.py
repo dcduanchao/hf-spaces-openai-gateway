@@ -1,0 +1,30 @@
+"""Forward the signed Hugging Face identity header between Spaces.
+
+HF's edge injects X-IP-Token on incoming Space requests. A Gradio Client
+created inside our adapter must explicitly forward this header when it is
+not created directly inside a Gradio event callback. See:
+https://www.gradio.app/docs/python-client/using-zero-gpu-spaces
+
+Never persist or log the header value. Authorization remains caller-owned.
+"""
+from __future__ import annotations
+
+import re
+
+# Keep an upper bound and reject embedded control characters before forwarding.
+SAFE_HEADER = re.compile(r"^[\x21-\x7e]{1,2048}$")
+
+
+def forward_headers(ip_token: str | None) -> dict[str, str]:
+    if not isinstance(ip_token, str) or not SAFE_HEADER.fullmatch(ip_token):
+        return {}
+    return {"x-ip-token": ip_token}
+
+
+def client_kwargs(token: str | None, ip_token: str | None) -> dict:
+    """Use both the explicit account token and the HF edge identity proof."""
+    kwargs = {"token": token or False, "verbose": False}
+    headers = forward_headers(ip_token)
+    if headers:
+        kwargs["headers"] = headers
+    return kwargs
