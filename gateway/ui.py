@@ -20,9 +20,8 @@ from .token_quota import token_quota_info
 from . import history
 from .reference_gallery import (
     categories as reference_categories, search_references, gallery_items,
-    choose_reference, format_selection, validate_selection,
 )
-from .image_inputs import download_public_image, ImageInputError
+from .reference_confirmation import preview_candidate, confirm_reference, clear_gallery_files
 
 SIZE_LABEL = lambda s: s.replace("x", " × ")
 logger = logging.getLogger(__name__)
@@ -117,7 +116,7 @@ def refresh_models():
         return gr.update(choices=[], value=None), "暂无已启用模型，请检查 gateway/catalog.json"
     return gr.update(choices=opts, value=opts[0][1]), "模型列表已刷新"
 
-def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json, selected_references):
+def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json):
     p = profiles().get(model_id)
     if not p:
         raise gr.Error("模型不存在或未启用，请刷新模型列表")
@@ -127,11 +126,10 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
     if mode == "图片编辑" and "edits" not in p.modes:
         raise gr.Error("当前 Space 未配置图片编辑接口")
     files = image_files or []
-    references = list(selected_references or []) if mode == "图片编辑" else []
-    if mode == "图片编辑" and not files and not references:
-        raise gr.Error("请上传图片或从人像、服装、姿势图库选择至少一张参考图")
-    if len(files) + len(references) > 4:
-        raise gr.Error("上传图与图库参考图合计最多 4 张")
+    if mode == "图片编辑" and not files:
+        raise gr.Error("请上传图片，或先从图库预览并确认添加参考图片")
+    if len(files) > 4:
+        raise gr.Error("上传图片框最多 4 张参考图片")
     if size not in p.allowed_sizes:
         raise gr.Error("当前尺寸不受此模型支持")
     try:
@@ -171,22 +169,6 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
                     im.convert("RGB").save(target)
                 input_paths.append(str(target))
                 history.store_image(record_id, target.read_bytes(), input_image=True)
-            if references:
-                try:
-                    references = validate_selection(references)
-                except Exception:
-                    history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000), "invalid_reference")
-                    raise gr.Error("图库选择已过期或来源无效，请重新搜索选择") from None
-                for index, reference in enumerate(references):
-                    try:
-                        png = download_public_image(reference["url"])
-                    except ImageInputError as exc:
-                        history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000), "invalid_reference_image")
-                        raise gr.Error(f"{reference['kind']}参考图加载失败：{exc}") from None
-                    target = Path(folder) / f"reference_{index}.png"
-                    target.write_bytes(png)
-                    input_paths.append(str(target))
-                    history.store_image(record_id, png, input_image=True)
         try:
             for index in range(int(count)):
                 req = dict(kwargs)
@@ -221,7 +203,7 @@ def create_ui():
                 prompt = gr.Textbox(label="图片描述", lines=5, max_lines=8,
                     placeholder="描述你想生成的画面，或者说明如何修改原图……")
                 source = gr.File(file_count="multiple", type="filepath", file_types=["image"],
-                    label="上传图片（第 1 张为主图，其余参考，最多 4 张）", visible=False)
+                    label="上传图片 / 已确认图库参考图（最多 4 张，点击图库图片后需确认）", visible=False)
                 edit_warning = gr.Markdown("", visible=True)
                 with gr.Accordion("🧑 人像 · 👗 服装 · 🧍 姿势参考图库", open=False, visible=False) as pose_panel:
                     gr.Markdown(
@@ -236,11 +218,14 @@ def create_ui():
                         pose_category = gr.Dropdown(["全部"], value="全部", label="分类", scale=2)
                     pose_search = gr.Button("筛选预览图", size="sm")
                     pose_reset = gr.Button("恢复默认预览", size="sm")
-                    pose_preview = gr.Gallery(label="点击图片添加参考（可跨图库选择）", columns=4, height=300, preview=True)
+                    pose_preview = gr.Gallery(label="点击仅预览（不会自动添加）", columns=4, height=300, preview=False)
                     pose_results = gr.State([])
-                    pose_selected = gr.State([])
-                    pose_hint = gr.Markdown("尚未选择参考图片。可组合人像 + 服装 + 姿势。与上传图合计最多 4 张。")
-                    pose_clear = gr.Button("清空所有图库参考图", size="sm")
+                    candidate = gr.State(None)
+                    confirmed_files = gr.State([])
+                    candidate_image = gr.Image(label="当前预览（未添加）", interactive=False, height=220)
+                    pose_hint = gr.Markdown("点击图库图片仅预览；点击「确认添加到上传图片」后才会作为编辑素材。最多 4 张。")
+                    confirm_button = gr.Button("确认添加到上传图片", variant="primary", size="sm")
+                    pose_clear = gr.Button("清除已确认的图库图片", size="sm")
                 with gr.Row():
                     model = gr.Dropdown(choices=opts, value=default_id,
                         label="当前可用模型", interactive=True)
@@ -270,10 +255,10 @@ def create_ui():
             outputs=[size, model_info, mode, source, edit_warning, pose_panel], api_visibility="private")
         mode.change(update_mode, inputs=[mode, model],
             outputs=[source, edit_warning, pose_panel], api_visibility="private").then(
-                reference_preview_for_mode, inputs=[mode, model, reference_kind, pose_selected],
+                reference_preview_for_mode, inputs=[mode, model, reference_kind, confirmed_files],
                 outputs=[pose_category, pose_preview, pose_results, pose_hint],
                 api_visibility="private")
-        reference_kind.change(default_reference_preview, inputs=[reference_kind, pose_selected],
+        reference_kind.change(default_reference_preview, inputs=[reference_kind, confirmed_files],
             outputs=[pose_category, pose_preview, pose_results, pose_hint], api_visibility="private")
 
         def lookup_references(kind, keyword, category, selected):
@@ -282,26 +267,39 @@ def create_ui():
             except Exception:
                 raise gr.Error("图库暂时无法访问，请稍后再试。") from None
             return gallery_items(found), found, (
-                f"{kind} · 展示 {len(found)} 张。点击图像添加参考。\n" +
-                format_selection(selected or [])
+                f"{kind} · 展示 {len(found)} 张。点击图片仅预览，点击确认才会加入上传框。"
             )
 
-        pose_search.click(lookup_references, inputs=[reference_kind, pose_keyword, pose_category, pose_selected],
+        pose_search.click(lookup_references,
+            inputs=[reference_kind, pose_keyword, pose_category, confirmed_files],
             outputs=[pose_preview, pose_results, pose_hint], api_visibility="private")
-        pose_reset.click(reset_reference_preview, inputs=[reference_kind, pose_selected],
+        pose_reset.click(reset_reference_preview,
+            inputs=[reference_kind, confirmed_files],
             outputs=[pose_keyword, pose_category, pose_preview, pose_results, pose_hint],
             api_visibility="private")
 
-        def choose_image(results, selected, evt: gr.SelectData):
-            return choose_reference(results or [], selected or [], evt.index)
+        def preview_image(results, evt: gr.SelectData):
+            return preview_candidate(results or [], evt.index)
 
-        pose_preview.select(choose_image, inputs=[pose_results, pose_selected],
-            outputs=[pose_selected, pose_hint], api_visibility="private")
-        pose_clear.click(lambda: ([], "已清空全部图库参考图"),
-            outputs=[pose_selected, pose_hint], api_visibility="private")
+        pose_preview.select(preview_image, inputs=[pose_results],
+            outputs=[candidate, candidate_image, pose_hint], api_visibility="private")
+
+        def confirm_image(item, files, added):
+            try:
+                return confirm_reference(item, files, added)
+            except ValueError as exc:
+                raise gr.Error(str(exc)) from None
+            except Exception:
+                raise gr.Error("参考图下载失败，请检查图库图片是否可公开访问。") from None
+
+        confirm_button.click(confirm_image, inputs=[candidate, source, confirmed_files],
+            outputs=[source, confirmed_files, pose_hint], api_visibility="private")
+
+        pose_clear.click(clear_gallery_files, inputs=[source, confirmed_files],
+            outputs=[source, confirmed_files, pose_hint], api_visibility="private")
         refresh.click(refresh_models, outputs=[model, info], api_visibility="private")
         run.click(generate,
-            inputs=[mode, model, prompt, source, size, count, seed, token, extra, pose_selected],
+            inputs=[mode, model, prompt, source, size, count, seed, token, extra],
             outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
         if default_id:
             demo.load(selected_model, inputs=[model],
