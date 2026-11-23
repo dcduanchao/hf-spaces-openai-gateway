@@ -1,5 +1,6 @@
 """OpenAI image edits: JSON URLs, multipart files, mixed sources, SSRF and bounds."""
 import io
+import base64
 import json
 import os
 import tempfile
@@ -10,7 +11,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from gateway.main import app
 from gateway import history
-from gateway.image_inputs import _validate_url, ImageInputError, validate_png_bytes
+from gateway.image_inputs import _validate_url, ImageInputError, validate_png_bytes, decode_image_data_url, MAX_IMAGE_BYTES
 
 
 def tiny_png():
@@ -35,6 +36,60 @@ class EditUrlTests(unittest.TestCase):
             "model": "qwen-image-2.1", "prompt": "change background",
             "size": "1024x1024", "response_format": "b64_json", **kwargs
         }
+
+    def test_mixed_base64_data_url_and_public_https_gallery_references(self):
+        inline = "data:image/png;base64," + base64.b64encode(tiny_png()).decode("ascii")
+        urls = [
+            {"image_url": inline},
+            {"image_url": "https://ga.du-ai.top/img/costume/SUM-0007.webp"},
+            {"image_url": "https://ga.du-ai.top/img/upper80v2_P034_front.png"},
+        ]
+        with patch("gateway.main.download_public_image", return_value=tiny_png()) as downloaded:
+            with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
+                response = self.client.post("/v1/images/edit", json=self.payload(
+                    images=urls, size="1024x1536", quality="high",
+                    input_fidelity="high", output_format="png",
+                ))
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(downloaded.call_count, 2)
+        self.assertEqual([c.args[0] for c in downloaded.call_args_list],
+                         [urls[1]["image_url"], urls[2]["image_url"]])
+        self.assertEqual(invoke.call_args.args[1]["extra_body"]["quality"], "quality")
+        paths = invoke.call_args.kwargs["image_paths"]
+        self.assertEqual(len(paths), 3)
+        self.assertEqual([Path(p).read_bytes() for p in paths],
+                         [tiny_png(), tiny_png(), tiny_png()])
+        record = history.get_record(history.list_records()["items"][0]["id"])
+        self.assertEqual(len(record["input_images"]), 3)
+        self.assertNotIn(inline, str(record))
+
+    def test_base64_data_url_in_both_image_aliases(self):
+        inline = "data:image/png;base64," + base64.b64encode(tiny_png()).decode()
+        for route in ("/v1/images/edit", "/v1/images/edits"):
+            for key in ("image", "images", "image_urls"):
+                with self.subTest(route=route, key=key):
+                    with patch("gateway.main.invoke", return_value=tiny_png()):
+                        response = self.client.post(route, json=self.payload(**{
+                            key: [{"image_url": inline}] if key == "images" else [inline]
+                        }))
+                    self.assertEqual(response.status_code, 200, response.text)
+
+    def test_base64_input_validation_errors_redact_input(self):
+        bad_cases = [
+            "data:image/png;base64,@@@@SECRET",
+            "data:image/gif;base64,AAAA",
+            "data:image/png;base64," + "A" * (14 * 1024 * 1024),
+            "data:image/png;base64," + base64.b64encode(b"not a picture").decode(),
+        ]
+        for inline in bad_cases:
+            with self.subTest(size=len(inline)):
+                response = self.client.post("/v1/images/edit", json=self.payload(images=[
+                    {"image_url": inline}
+                ]))
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertEqual(response.json()["error"]["code"], "invalid_image")
+                self.assertNotIn("SECRET", response.text)
+                self.assertNotIn("AAAA", response.text)
 
     def test_single_public_url(self):
         with patch("gateway.main.download_public_image", return_value=tiny_png()) as get:
@@ -215,6 +270,14 @@ class RemoteValidationTests(unittest.TestCase):
             (2,1,6,"",("93.184.215.14",443)),(2,1,6,"",("10.0.0.4",443))]):
             with self.assertRaises(ImageInputError):
                 _validate_url("https://example.org/a.png")
+
+    def test_base64_decoder_rejects_invalid_and_oversized(self):
+        good = "data:image/png;base64," + base64.b64encode(tiny_png()).decode()
+        self.assertEqual(decode_image_data_url(good), tiny_png())
+        for bad in ("data:text/plain;base64,SGVsbG8=", "data:image/png;base64,!!!!",
+                    "data:image/png;base64," + "A" * (14 * 1024 * 1024)):
+            with self.subTest(length=len(bad)), self.assertRaises(ImageInputError):
+                decode_image_data_url(bad)
 
     def test_png_validation(self):
         self.assertTrue(validate_png_bytes(tiny_png()).startswith(bytes([137, 80, 78, 71])))
