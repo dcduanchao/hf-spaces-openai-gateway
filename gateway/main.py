@@ -8,7 +8,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Any
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, Request
+from fastapi import FastAPI, Header, HTTPException, UploadFile, Request
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from pydantic import BaseModel, Field, ConfigDict
 from .models import load_profiles
@@ -17,6 +17,7 @@ from .token_quota import quota_status
 from .temp_images import get_temp_image, save_temp_image, public_image_url
 from . import history
 from .admin import router as admin_router
+from .image_inputs import download_public_image, validate_png_bytes, ImageInputError
 
 app = FastAPI(title="HF Spaces OpenAI Image Gateway", version="0.1.0")
 app.include_router(admin_router)
@@ -221,44 +222,118 @@ def generate(body: GenerateRequest, authorization: str | None = Header(default=N
     token = request_hf_token(authorization, x_hf_token)
     return produce(body.model_dump(exclude_none=True, exclude_unset=False), token)
 
+def _edit_json_images(payload: dict) -> list[tuple[str, str]]:
+    """Accept image/image_urls/images, preserving order and rejecting ambiguous mixes."""
+    provided = [key for key in ("image", "images", "image_urls") if key in payload]
+    if len(provided) > 1:
+        err(400, "invalid_image", "Use only one of image, images, image_urls")
+    if not provided:
+        err(400, "invalid_image_count", "1-4 images required")
+    raw = payload[provided[0]]
+    values = [raw] if isinstance(raw, str) else raw
+    if not isinstance(values, list) or not 1 <= len(values) <= 4:
+        err(400, "invalid_image_count", "1-4 image URLs required")
+    if not all(isinstance(url, str) for url in values):
+        err(400, "invalid_image", "JSON image inputs must be public HTTPS URL strings")
+    return [("url", url) for url in values]
+
+
 @app.post("/v1/images/edits")
-async def edit(model: str = Form(...), prompt: str = Form(...), image: list[UploadFile] = File(...), size: str | None = Form(None), n: int = Form(1), response_format: str = Form("url"), seed: int = Form(-1), extra_body: str = Form("{}"), authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
+async def edit(request: Request, authorization: str | None = Header(default=None),
+               x_hf_token: str | None = Header(default=None)):
+    """OpenAI multipart edits + JSON public HTTPS URLs + mixed multipart URLs/files."""
+    import asyncio
     import json
+    from pydantic import ValidationError
+
     token = request_hf_token(authorization, x_hf_token)
-    profile = profile_for(model, "edits")
+    content_type = request.headers.get("content-type", "").lower()
+    sources: list[tuple[str, Any]] = []
+    try:
+        if content_type.startswith("application/json"):
+            raw = await request.json()
+            if not isinstance(raw, dict):
+                err(400, "invalid_parameters", "JSON body must be an object")
+            sources = _edit_json_images(raw)
+            reserved = {"model", "prompt", "size", "n", "seed", "response_format",
+                        "extra_body", "image", "images", "image_urls"}
+            # Accept SDK-style top-level extra fields just as generations does.
+            extras = raw.get("extra_body", {})
+            if not isinstance(extras, dict):
+                err(400, "invalid_parameters", "extra_body must be a JSON object")
+            for k, v in raw.items():
+                if k not in reserved:
+                    if k in extras:
+                        err(400, "invalid_parameters", f"duplicate extra parameter: {k}")
+                    extras[k] = v
+            fields = {k: raw[k] for k in ("model", "prompt", "size", "n", "seed", "response_format") if k in raw}
+            fields["extra_body"] = extras
+        elif content_type.startswith("multipart/form-data"):
+            form = await request.form()
+            fields = {}
+            for key in ("model", "prompt", "size", "n", "seed", "response_format"):
+                if key in form:
+                    fields[key] = form.get(key)
+            for key in ("n", "seed"):
+                if key in fields:
+                    try:
+                        fields[key] = int(fields[key])
+                    except (ValueError, TypeError) as exc:
+                        err(400, "invalid_parameters", f"{key} must be an integer")
+            extras = json.loads(str(form.get("extra_body") or "{}"))
+            if not isinstance(extras, dict):
+                err(400, "invalid_parameters", "extra_body must be a JSON object")
+            fields["extra_body"] = extras
+            # FormData.multi_items preserves input order for repeated image/image_url.
+            for key, value in form.multi_items():
+                if key == "image":
+                    if isinstance(value, UploadFile):
+                        sources.append(("upload", value))
+                    elif isinstance(value, str):
+                        sources.append(("url", value))
+                    else:
+                        err(400, "invalid_image", "image must be an uploaded file or public HTTPS URL")
+                elif key in ("image_url", "image_urls"):
+                    if not isinstance(value, str):
+                        err(400, "invalid_image", "image_url must be a public HTTPS URL")
+                    sources.append(("url", value))
+        else:
+            err(415, "unsupported_media_type", "Use application/json or multipart/form-data")
+
+        if not 1 <= len(sources) <= 4:
+            err(400, "invalid_image_count", "1-4 images required (file upload or public HTTPS URLs)")
+        try:
+            body = GenerateRequest(**fields)
+        except ValidationError as ex:
+            err(400, "invalid_parameters", "Invalid edit parameters: " + "; ".join(
+                str(e.get("loc")) + " " + e.get("msg", "") for e in ex.errors())[:400])
+    except (ValueError, json.JSONDecodeError) as ex:
+        err(400, "invalid_parameters", "Invalid JSON or image parameter")
+    except HTTPException:
+        raise
+
+    profile = profile_for(body.model, "edits")
     if profile.adapter != "qwen_image" and not ("images" in profile.bindings or "image" in profile.bindings):
         err(400, "unsupported_edit", "Model has no image input binding")
-    try:
-        extras = json.loads(extra_body)
-        if not isinstance(extras, dict):
-            raise ValueError("extra_body must be object")
-        body = GenerateRequest(model=model, prompt=prompt, size=size, n=n, response_format=response_format, seed=seed, extra_body=extras)
-    except (ValueError, TypeError) as ex:
-        err(400, "invalid_parameters", str(ex))
-    if not 1 <= len(image) <= 4:
-        err(400, "invalid_image_count", "1-4 images required")
-    paths = []
-    with tempfile.TemporaryDirectory() as temp:
-        for i, upload in enumerate(image):
-            if upload.content_type not in ("image/jpeg", "image/png", "image/webp"):
-                err(400, "invalid_image", "Only PNG, JPEG and WebP supported")
-            content = await upload.read(10 * 1024 * 1024 + 1)
-            if len(content) > 10 * 1024 * 1024:
-                err(413, "image_too_large", "Image exceeds 10 MB")
-            from PIL import Image
-            import io
+
+    with tempfile.TemporaryDirectory(prefix="hf_edit_") as folder:
+        paths = []
+        for index, (kind, value) in enumerate(sources):
             try:
-                with Image.open(io.BytesIO(content)) as im:
-                    im.verify()
-            except Exception:
-                err(400, "invalid_image", "Invalid image content")
-            dest = Path(temp) / f"{i}.png"
-            # preserve original encoding, with correct suffix for Gradio
-            ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[upload.content_type]
-            dest = dest.with_suffix(ext)
-            dest.write_bytes(content)
-            paths.append(str(dest))
-        return produce(body.model_dump(), token, mode="edits", paths=paths)
+                if kind == "upload":
+                    uploaded = value
+                    if uploaded.content_type not in ("image/jpeg", "image/png", "image/webp"):
+                        err(400, "invalid_image", "Only PNG, JPEG and WebP supported")
+                    content = await uploaded.read(10 * 1024 * 1024 + 1)
+                    png = await asyncio.to_thread(validate_png_bytes, content)
+                else:
+                    png = await asyncio.to_thread(download_public_image, value)
+            except ImageInputError as ex:
+                err(400, "invalid_image", f"Image {index+1}: {ex}")
+            target = Path(folder) / f"input_{index}.png"
+            target.write_bytes(png)
+            paths.append(str(target))
+        return await asyncio.to_thread(produce, body.model_dump(), token, "edits", paths)
 
 # Serve Gradio studio on / while preserving the FastAPI image endpoints.
 import gradio as gr
