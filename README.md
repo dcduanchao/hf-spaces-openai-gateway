@@ -31,7 +31,7 @@ pinned: false
 
 OpenAI 原始字段（`model`、`prompt`、`size`、`n`、`response_format`）与模型额外参数（Qwen 的 `quality` / `negative_prompt` / `custom_size`，Z-Image 的 `steps`）使用方式见 [完整文档](docs/OPENAI_API.md)。
 
-当前只返回 `response_format=b64_json`，**不提供 URL 格式**：第三方 Space 的文件 URL 可能很快过期，且本项目没有部署持久图床。`n` 通过顺序调用上游实现（若 seed 非负则逐张加一）。
+默认 `response_format=url`，返回本网关的 `/v1/files/{id}.png` 临时图片地址（有效期约 30 分钟，Space 重启后可能提前失效）。也可以显式选择 `response_format=b64_json` 保留 Base64 返回。`GATEWAY_PUBLIC_BASE_URL` 可配置公共访问域名，默认是本项目 HF Space 域名。`n` 通过顺序调用上游实现（若 seed 非负则逐张加一）。
 
 ## 本地启动
 
