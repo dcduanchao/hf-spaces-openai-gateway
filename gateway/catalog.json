@@ -32,11 +32,6 @@
           "kind": "str",
           "default": ""
         },
-        "enable_extend": {
-          "target": "enable_extend",
-          "kind": "bool",
-          "default": false
-        },
         "quality": {
           "target": "quality",
           "kind": "str",

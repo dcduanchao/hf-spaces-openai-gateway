@@ -16,6 +16,8 @@ class QwenContractTests(unittest.TestCase):
         self.assertEqual(prep["input_images"], [])
         self.assertGreaterEqual(prep["seed"], 0)
         self.assertFalse(prep["randomize_seed"])
+        self.assertFalse(prep["enable_extend"])
+        self.assertFalse(gen["enable_extend"])
 
     def test_seed_preserved(self):
         req = dict(self.payload, seed=42)
@@ -28,11 +30,16 @@ class QwenContractTests(unittest.TestCase):
             build_requests(self.profile, dict(self.payload, seed=-2))
 
     def test_extra_fields(self):
-        req = dict(self.payload, extra_body={"quality": "quality", "negative_prompt": "blurry", "enable_extend": True})
+        req = dict(self.payload, extra_body={"quality": "quality", "negative_prompt": "blurry"})
         prep, gen = build_requests(self.profile, req)
         self.assertEqual(prep["quality"], "quality")
-        self.assertTrue(prep["enable_extend"])
+        self.assertFalse(prep["enable_extend"])
         self.assertEqual(gen["negative_prompt"], "blurry")
+
+    def test_prompt_extension_cannot_be_enabled(self):
+        req = dict(self.payload, extra_body={"enable_extend": True})
+        with self.assertRaises(ValueError):
+            build_requests(self.profile, req)
 
     def test_gallery_structure(self):
         with patch("gateway.qwen_image.handle_file", side_effect=lambda p: {"path": p}):

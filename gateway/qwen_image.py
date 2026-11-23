@@ -68,7 +68,7 @@ def build_requests(profile, payload, image_paths=None):
     prepare = {
         "input_images": gallery,
         "original_prompt": payload["prompt"],
-        "enable_extend": values["enable_extend"],
+        "enable_extend": False,  # 禁用提示词扩展
         "custom_size": values["custom_size"],
         "quality": values["quality"],
         "seed": actual_seed,
@@ -76,7 +76,7 @@ def build_requests(profile, payload, image_paths=None):
     }
     generate = {
         "original_prompt": payload["prompt"],
-        "enable_extend": values["enable_extend"],
+        "enable_extend": False,  # 禁用提示词扩展
         "custom_size": values["custom_size"],
         "log_dir": "./generation_logs_paper_case",
         "seed": actual_seed,
