@@ -21,7 +21,8 @@ pinned: false
 ## 接口
 
 - `GET /health`
-- `GET /v1/models`：返回已启用模型及专属参数 Schema
+- `GET /v1/models`：精简模型清单，字段为 `id`、`object`、`created`、`owned_by`、`type`、`display_name`
+- `GET /v1/models/detail`：原有完整模型清单，包含尺寸、模式、扩展参数
 - `POST /v1/images/generations`：JSON，OpenAI-compatible subset
 - `POST /v1/images/edits`：multipart，最多 4 张图片，需配置图像输入绑定
 - `GET /docs`：FastAPI API 文档
