@@ -160,7 +160,7 @@ def reset_edit_prompt(mode, files, confirmed, style):
     return (generated if generated else gr.skip()), True
 
 
-def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json, custom_dimensions=""):
+def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json, custom_dimensions="", request: gr.Request = None):
     p = profiles().get(model_id)
     if not p:
         raise gr.Error("模型不存在或未启用，请刷新模型列表")
@@ -188,6 +188,9 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
     hf_token = (token or "").strip() or None
     if hf_token and not re.fullmatch(r"hf_[A-Za-z0-9_]+", hf_token):
         raise gr.Error("HF Token 格式不正确，请填写 hf_ 开头的个人访问令牌。")
+    # X-IP-Token is added by the HF Spaces edge. The adapter creates a nested
+    # Gradio Client, so we must forward this identity to the upstream ZeroGPU.
+    ip_token = request.headers.get("x-ip-token") if request and request.headers else None
     # The UI uses only the token explicitly entered by the visitor. It does NOT
     # silently spend the server owner's UPSTREAM_HF_TOKEN quota.
     kwargs = {"model": model_id, "prompt": prompt, "size": size,
@@ -223,7 +226,7 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
                 req = dict(kwargs)
                 if req["seed"] >= 0:
                     req["seed"] += index
-                png = invoke(p, req, hf_token, image_paths=input_paths or None)
+                png = invoke(p, req, hf_token, image_paths=input_paths or None, ip_token=ip_token)
                 history.store_image(record_id, png)
                 images.append((Image.open(io.BytesIO(png)).copy(), f"第 {index + 1} 张 · {model_id}"))
                 messages.append(f"第 {index + 1} 张生成成功")
