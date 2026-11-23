@@ -94,7 +94,7 @@ def default_reference_preview(kind, selected=None):
         gr.update(choices=available, value="全部"),
         gallery_items(found),
         found,
-        message + f"\n已确认 {len(selected or [])} 张图库参考图；已确认图片显示在上传图片框中。",
+        message + f"\n已确认 {len(selected or [])} 张图库参考图；已确认图片显示在上传图片框中。" + (" " + " / ".join(f"{item.get('kind', '')}：{item.get('title', '')}" for item in (selected or [])) if selected else ""),
     )
 
 
