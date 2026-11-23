@@ -39,15 +39,33 @@ def _folder(record_id: str) -> Path:
     return _ready() / record_id[:2] / record_id
 
 
+_TOKEN_RE = re.compile(r"hf_[A-Za-z0-9_]+|Bearer\\s+[^\\s,;]+", re.I)
+
+
+def _safe_value(value: Any, key: str = "", depth: int = 0):
+    if any(x in key.lower() for x in ("token", "authorization", "secret", "password", "api_key", "cookie")):
+        return "[REDACTED]"
+    if depth > 5:
+        return "[max-depth]"
+    if isinstance(value, dict):
+        return {str(k)[:80]: _safe_value(v, str(k), depth + 1) for k, v in list(value.items())[:40]}
+    if isinstance(value, (list, tuple)):
+        return [_safe_value(v, key, depth + 1) for v in value[:40]]
+    if isinstance(value, str):
+        return _TOKEN_RE.sub("[REDACTED]", value)[:MAX_PROMPT]
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    return "<unsupported>"
+
+
 def new_record(model: str, mode: str, prompt: str, params: dict) -> str:
     record_id = secrets.token_hex(16)
     directory = _folder(record_id)
     directory.mkdir(parents=True, exist_ok=False)
     record = {
         "id": record_id, "model": model, "mode": mode,
-        "prompt": str(prompt)[:MAX_PROMPT],
-        "parameters": {k: v for k, v in params.items() if k not in (
-            "hf_token", "token", "authorization", "x_hf_token", "api_key", "image", "images")},
+        "prompt": _safe_value(str(prompt)[:MAX_PROMPT]),
+        "parameters": _safe_value(params),
         "status": "running", "created_at": datetime.now(timezone.utc).isoformat(),
         "duration_ms": None, "error_code": None, "images": [],
         "input_images": [],
