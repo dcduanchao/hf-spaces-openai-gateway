@@ -7,7 +7,7 @@
 - 精简模型列表：`GET /v1/models`
 - 详细模型列表：`GET /v1/models/detail`
 - 文生图：`POST /v1/images/generations`
-- 图片编辑：`POST /v1/images/edits`
+- 图片编辑：`POST /v1/images/edits`（兼容别名 `POST /v1/images/edit`）
 - 临时图片访问：`GET /v1/files/{id}.png`（URL 返回格式）
 - HF Token 状态与 ZeroGPU 额度：`GET /v1/hf/status`
 - 健康检查：`GET /health`
@@ -371,6 +371,41 @@ Python SDK 的 `extra_body` 通常会合并为 HTTP JSON 顶层字段；网关�
 **版权提醒：** 上游图库中的图片与原始数据不适用其源代码 MIT 授权；原仓库声明相关图像有非商业使用限制。用户应确认使用、下载及在私有 HF Bucket 长期保存参考图符合素材授权。本集成不打包整个图片素材库，默认隐藏明显成人/性感分类。
 
 图库选择仅作用于 **Gradio UI**。已有的 OpenAI `/v1/images/edits` 多文件和公开 HTTPS URL 机制保持不变。
+
+## 自部署 AI Pose Gallery 的 JSON 编辑请求兼容
+
+兼容原项目 [AI Pose Gallery 中文版](https://github.com/anhao/ai-pose-gallery-zh) 的三图编辑参数。既可用标准复数端点 `POST /v1/images/edits`，也可用兼容别名 **`POST /v1/images/edit`**。两者处理逻辑相同。
+
+### 兼容的请求体（可直接用于 Postman）
+
+```json
+{
+  "model": "qwen-image-2.1",
+  "prompt": "根据图1人物、图2服装、图3姿势生成完整的真实人像写真",
+  "images": [
+    {"image_url": "https://ga.du-ai.top/img/portrait/f009cba9893.webp"},
+    {"image_url": "https://ga.du-ai.top/img/costume/SUM-0007.webp"},
+    {"image_url": "https://ga.du-ai.top/img/full_single_P009_low.png"}
+  ],
+  "size": "1024x1536",
+  "quality": "high",
+  "input_fidelity": "high",
+  "output_format": "png"
+}
+```
+
+`images` 可传由 `{"image_url":"https://..."}` 组成的数组（1～4 张），并保持输入顺序，Prompt 中的图1、图2、图3与实际输入一一对应。也支持之前的 `"images": ["https://...", ...]`、`image` 和 `image_urls`。
+
+**参数转换说明：**
+
+- `quality: "high"` → Qwen 上游支持的 `quality: "quality"`；`quality: "low"` / `"medium"` → `"speed"`。直接传 `"quality"` 或 `"speed"` 同样可用。
+- `input_fidelity: "high"` 或 `"low"` 被兼容接收，但该 HF Space 的 Gradio 推理接口**没有此参数**，不会向上游传递，因此无法保证高保真效果。
+- `output_format: "png"` 可用；其他值会返回 400，因为网关统一返回或存储 PNG。
+- `size` 支持自定义 `宽x高`，例如 `1024x1536`、`1200x1600`，不再局限于预设列表。**宽高各为 256～4096 像素、总像素数不超过 16777216**。模型上游仍可能限制尺寸，网关并不保证所有合法尺寸都能完成推理。
+- 公开图片 URL 必须为公网 HTTPS 图片直链，受现有 SSRF、内容类型、单张 10MB 限制。
+- 网页工作室提供“尺寸”常用预设下拉和“自定义尺寸”文本输入；自定义值非空时优先生效。成功生成的结果和参考图继续写入私有 HF Bucket。
+
+注意：JSON 字符串中的 URL 请写成正常的 `https://...`，不要手动写成 `https\\://...`（这不是合法 JSON 转义）。
 
 ## 4. Qwen-Image-2.1 图片编辑（单图、多图、公开 URL）
 
