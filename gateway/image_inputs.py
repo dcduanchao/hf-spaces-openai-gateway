@@ -6,6 +6,9 @@ the validated IP. TLS verifies the original hostname. Redirects are rechecked.
 from __future__ import annotations
 
 import http.client
+import base64
+import binascii
+import re
 import ipaddress
 import io
 import socket
@@ -21,6 +24,30 @@ MAX_REDIRECTS = 2
 
 class ImageInputError(ValueError):
     pass
+
+
+DATA_URL_PATTERN = re.compile(r"^data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/]*={0,2})$", re.I)
+MAX_DATA_URL_LENGTH = ((MAX_IMAGE_BYTES + 2) // 3) * 4 + 128
+
+
+def decode_image_data_url(value: str) -> bytes:
+    """Decode an inline PNG/JPEG/WebP safely without leaking its contents.
+
+    Enforce encoded-length bound before decoding and normalize to PNG through
+    the same image validator used by uploads and public HTTPS URLs.
+    """
+    if not isinstance(value, str) or not value.startswith("data:"):
+        raise ImageInputError("图片必须为支持的 Base64 Data URL")
+    if len(value) > MAX_DATA_URL_LENGTH:
+        raise ImageInputError("Base64 图片超过 10 MB")
+    matched = DATA_URL_PATTERN.fullmatch(value)
+    if not matched or not matched.group(2):
+        raise ImageInputError("仅支持 data:image/png|jpeg|webp;base64,... 图片")
+    try:
+        decoded = base64.b64decode(matched.group(2), validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ImageInputError("Base64 图片编码无效") from exc
+    return validate_png_bytes(decoded)
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
