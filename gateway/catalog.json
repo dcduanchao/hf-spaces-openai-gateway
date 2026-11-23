@@ -87,7 +87,7 @@
       "display_name": "Z-Image-Turbo"
     },
     {
-      "id": "qwen-image-2.1-viggle-turbo",
+      "id": "qwen-image-2.1-6",
       "display_name": "Qwen Image 2.1 · Viggle Turbo v0.3",
       "adapter": "viggle_turbo",
       "space_id": "Viggle/Qwen-Image-2.1-viggle-turbo",
