@@ -219,7 +219,127 @@ curl -sS "$GATEWAY_BASE_URL/images/generations" \
 python -c 'import json,base64; open("z-image.png","wb").write(base64.b64decode(json.load(open("z-image-response.json"))["data"][0]["b64_json"]))'
 ```
 
-## 6. 通用请求参数
+## 6. Postman 调用示例（OpenAI 兼容 API）
+
+**公共地址**：`https://duan0320-hf-spaces-openai-gateway.hf.space`
+
+Postman 中可以创建 Environment 变量：
+
+- `base_url`：`https://duan0320-hf-spaces-openai-gateway.hf.space`
+- `hf_token`：选填，仅使用个人 ZeroGPU 额度时填写；建议设为敏感变量
+
+### 6.1 公开查询模型列表
+
+- Method：`GET`
+- URL：`{{base_url}}/v1/models`
+- Authorization：**No Auth**
+- Body：**none**
+
+无需 Token，直接发送即可。
+
+### 6.2 Qwen-Image-2.1：文生图 JSON
+
+- Method：`POST`
+- URL：`{{base_url}}/v1/images/generations`
+- Authorization：**No Auth**
+- Headers：`Content-Type: application/json`
+- Body → **raw → JSON**：
+
+```json
+{
+  "model": "qwen-image-2.1",
+  "prompt": "A cute cat sitting by a sunny window, cinematic lighting",
+  "size": "1024x1024",
+  "n": 1,
+  "response_format": "b64_json",
+  "seed": 42,
+  "extra_body": {
+    "negative_prompt": "blurry, low quality",
+    "quality": "speed",
+    "custom_size": true
+  }
+}
+```
+
+### 6.3 Z-Image-Turbo：文生图 JSON
+
+- Method：`POST`
+- URL：`{{base_url}}/v1/images/generations`
+- Authorization：**No Auth**
+- Headers：`Content-Type: application/json`
+- Body → **raw → JSON**：
+
+```json
+{
+  "model": "z-image-turbo",
+  "prompt": "A futuristic city at sunrise, cinematic photo",
+  "size": "1024x1024",
+  "n": 1,
+  "response_format": "b64_json",
+  "seed": -1,
+  "extra_body": {
+    "steps": 9
+  }
+}
+```
+
+### 6.4 使用个人 HF Token
+
+以上两个 JSON **完全不变**；只需在对应请求的 Headers 增加：
+
+```text
+X-HF-Token: {{hf_token}}
+```
+
+若要匿名访问，**删除或禁用该 Header**。不需要 `GATEWAY_API_KEY`，也不需要 OpenAI 官方 API Key。也可以使用 `Authorization: Bearer hf_...`，但建议优先采用 `X-HF-Token` 避免混淆。
+
+### 6.5 Qwen-Image-2.1：图片编辑（form-data）
+
+图片上传接口不是 JSON，Postman 必须设置 **Body → form-data**；不要手动设置 `Content-Type`，让 Postman 自动设置 multipart boundary。
+
+| Key | Type | Value |
+|---|---|---|
+| `model` | Text | `qwen-image-2.1` |
+| `prompt` | Text | `将背景改成樱花公园，保留主体` |
+| `image` | File | 本地选择 `input.png` |
+| `size` | Text | `1024x1024` |
+| `n` | Text | `1` |
+| `seed` | Text | `42` |
+| `extra_body` | Text | `{"quality":"speed","negative_prompt":"blurry","custom_size":true}` |
+
+Method：`POST`，URL：`{{base_url}}/v1/images/edits`。多图编辑可在 Postman form-data 中增加多个同名 `image` File 字段，最多 4 张。
+
+以上表格的可复制 Markdown 源码：
+
+```markdown
+| Key | Type | Value |
+|---|---|---|
+| `model` | Text | `qwen-image-2.1` |
+| `prompt` | Text | `将背景改成樱花公园，保留主体` |
+| `image` | File | 本地选择 `input.png` |
+| `size` | Text | `1024x1024` |
+| `n` | Text | `1` |
+| `seed` | Text | `42` |
+| `extra_body` | Text | `{"quality":"speed","negative_prompt":"blurry","custom_size":true}` |
+```
+
+### 6.6 在 Postman 中预览 Base64 图片
+
+响应为 JSON，图片数据位于 `data[0].b64_json`。在 Postman 的 **Scripts → Post-response**（旧版本为 Tests）中粘贴：
+
+```javascript
+const response = pm.response.json();
+const image = response.data?.[0]?.b64_json;
+if (image) {
+  pm.visualizer.set('<img style="max-width:100%" src="data:image/png;base64,{{img}}"/>', {img: image});
+}
+```
+
+发送成功后点击响应的 **Visualize** 标签查看图片。也可以把 Base64 解码成 PNG 文件。
+
+**可直接导入的 Postman Collection**：[postman/HF-Spaces-OpenAI-Gateway.postman_collection.json](../postman/HF-Spaces-OpenAI-Gateway.postman_collection.json)。其中包含公开查询、Qwen 文生图、Z-Image 文生图、Qwen 图片编辑的请求模板。
+
+## 7. 通用请求参数
 
 | 字段 | 说明 |
 |---|---|
@@ -245,7 +365,7 @@ python -c 'import json,base64; open("z-image.png","wb").write(base64.b64decode(j
 
 `created` 是实际服务端 Unix 时间戳，上面只是结构示意。图片均转成 PNG，返回内容较大；如需保存，请解码 `b64_json`，不要直接当成下载 URL。
 
-## 7. 常见错误
+## 8. 常见错误
 
 | HTTP 状态 | 错误码 | 解释 |
 |---|---|---|
@@ -259,7 +379,7 @@ python -c 'import json,base64; open("z-image.png","wb").write(base64.b64decode(j
 
 图片编辑的数量、类型和文件大小错误可能返回其他 400/413 响应。可在 HF Space Container Logs 中按 `[hf-upstream]` 查询接口、参数和耗时诊断信息。成功部署并不代表上游 GPU 调用一定成功。
 
-## 8. 源码索引
+## 9. 源码索引
 
 - `gateway/catalog.json` — 模型清单与尺寸、专属参数。
 - `gateway/main.py` — OpenAI API 路由与鉴权。
