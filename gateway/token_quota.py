@@ -102,7 +102,7 @@ def token_quota_info(token: str) -> str:
         f"**Token 有效：{username}**\n\n"
         f"**ZeroGPU 剩余可用时长：{format_seconds(remaining)}**\n\n"
         f"基础额度：{format_seconds(base)}\n\n"
-        f"{tier_hint}\\n\\n"
+        f"{tier_hint}\n\n"
         f"已使用（按基础额度估算）：{format_seconds(used)}\n\n"
         f"**下次额度重置时间：{format_date(reset)}**\n\n"
         f"查询时间：{checked_at}\n\n"
