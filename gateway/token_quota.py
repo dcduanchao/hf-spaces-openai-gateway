@@ -51,6 +51,17 @@ def parse_quota(payload: object) -> tuple[float, float, str | None]:
     return remaining, base, reset
 
 
+def quota_tier_hint(base_seconds: float) -> str:
+    """A quota interpretation, not an assertion about billing subscription."""
+    if 270 <= base_seconds <= 330:
+        return (
+            "**额度提示：当前 Token 对应账户的基础配额约为 5 分钟（免费档）。** "
+            "如果你拥有 Pro，请核对 Token 所属用户名与 Pro 订阅账户是否一致。"
+            "Pro 基础额度通常为每天 40 分钟；剩余秒数不保证上游能接受任务。"
+        )
+    return ""
+
+
 def token_quota_info(token: str) -> str:
     token = (token or "").strip()
     if not token:
@@ -86,10 +97,12 @@ def token_quota_info(token: str) -> str:
         )
 
     used = max(0, base - remaining)
+    tier_hint = quota_tier_hint(base)
     return (
         f"**Token 有效：{username}**\n\n"
         f"**ZeroGPU 剩余可用时长：{format_seconds(remaining)}**\n\n"
         f"基础额度：{format_seconds(base)}\n\n"
+        f"{tier_hint}\\n\\n"
         f"已使用（按基础额度估算）：{format_seconds(used)}\n\n"
         f"**下次额度重置时间：{format_date(reset)}**\n\n"
         f"查询时间：{checked_at}\n\n"
