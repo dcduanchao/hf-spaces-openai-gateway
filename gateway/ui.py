@@ -18,6 +18,8 @@ from .adapter import invoke
 from .models import load_profiles
 from .token_quota import token_quota_info
 from . import history
+from .pose_gallery import search_poses, gallery_items, add_selected_pose
+from .image_inputs import download_public_image, ImageInputError
 
 SIZE_LABEL = lambda s: s.replace("x", " × ")
 logger = logging.getLogger(__name__)
@@ -52,6 +54,7 @@ def selected_model(model_id):
             gr.update(value="文生图"),
             gr.update(visible=False),
             gr.update(visible=False),
+            gr.update(visible=False),
         )
     sizes = [(SIZE_LABEL(x), x) for x in p.allowed_sizes]
     note = (
@@ -66,6 +69,7 @@ def selected_model(model_id):
         gr.update(value="文生图"),
         gr.update(visible=False),
         gr.update(visible=False),
+        gr.update(visible=False),
     )
 
 def update_mode(mode, model_id):
@@ -73,7 +77,7 @@ def update_mode(mode, model_id):
     editing = mode == "图片编辑"
     available = bool(p and "edits" in p.modes)
     note = "" if (not editing or available) else "⚠️ 此模型暂未声明支持图片编辑。"
-    return gr.update(visible=editing), gr.update(value=note)
+    return gr.update(visible=editing), gr.update(value=note), gr.update(visible=editing and available)
 
 def refresh_models():
     opts = choices()
@@ -81,7 +85,7 @@ def refresh_models():
         return gr.update(choices=[], value=None), "暂无已启用模型，请检查 gateway/catalog.json"
     return gr.update(choices=opts, value=opts[0][1]), "模型列表已刷新"
 
-def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json):
+def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json, pose_urls):
     p = profiles().get(model_id)
     if not p:
         raise gr.Error("模型不存在或未启用，请刷新模型列表")
@@ -91,10 +95,11 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
     if mode == "图片编辑" and "edits" not in p.modes:
         raise gr.Error("当前 Space 未配置图片编辑接口")
     files = image_files or []
-    if mode == "图片编辑" and not files:
-        raise gr.Error("请上传至少一张图片")
-    if len(files) > 4:
-        raise gr.Error("最多上传 4 张参考图片")
+    pose_urls = list(pose_urls or []) if mode == "图片编辑" else []
+    if mode == "图片编辑" and not files and not pose_urls:
+        raise gr.Error("请上传图片或从姿势参考图库选择至少一张")
+    if len(files) + len(pose_urls) > 4:
+        raise gr.Error("上传图和姿势参考图合计最多 4 张")
     if size not in p.allowed_sizes:
         raise gr.Error("当前尺寸不受此模型支持")
     try:
@@ -134,6 +139,22 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
                     im.convert("RGB").save(target)
                 input_paths.append(str(target))
                 history.store_image(record_id, target.read_bytes(), input_image=True)
+            if pose_urls:
+                from .pose_gallery import ASSET_BASE, load_pose_catalog
+                allowed = {entry["url"] for entry in load_pose_catalog()}
+                for index, url in enumerate(pose_urls):
+                    if url not in allowed or not url.startswith(ASSET_BASE):
+                        history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000), "invalid_pose_reference")
+                        raise gr.Error("姿势参考图来源无效，请重新搜索选择")
+                    try:
+                        png = download_public_image(url)
+                    except ImageInputError as exc:
+                        history.finish_record(record_id, "failed", round((time.monotonic() - t0) * 1000), "invalid_pose_reference")
+                        raise gr.Error(f"姿势参考图加载失败：{exc}") from None
+                    target = Path(folder) / f"pose_{index}.png"
+                    target.write_bytes(png)
+                    input_paths.append(str(target))
+                    history.store_image(record_id, png, input_image=True)
         try:
             for index in range(int(count)):
                 req = dict(kwargs)
@@ -170,6 +191,22 @@ def create_ui():
                 source = gr.File(file_count="multiple", type="filepath", file_types=["image"],
                     label="上传图片（第 1 张为主图，其余参考，最多 4 张）", visible=False)
                 edit_warning = gr.Markdown("", visible=True)
+                with gr.Accordion("🧍 姿势参考图库（外部素材 · 非商业使用限制）", open=False, visible=False) as pose_panel:
+                    gr.Markdown(
+                        "来源：[AI 角色姿势图库中文版](https://github.com/anhao/ai-pose-gallery-zh) "
+                        "／原作者 ギア（@giaaibusi）。图片版权不属于本项目 MIT 许可，"
+                        "**请遵守原作者的非商业使用要求**；不会自动下载整个图库。"
+                        "默认只展示普通姿势，不展示成人向类别。"
+                    )
+                    with gr.Row():
+                        pose_keyword = gr.Textbox(label="搜索动作 / 姿势名称", placeholder="例如：站姿、坐姿、侧面", scale=3)
+                        pose_category = gr.Dropdown(["全部", "站姿", "坐姿", "蹲姿", "躺姿"], value="全部", label="分类", scale=2)
+                    pose_search = gr.Button("搜索姿势（最多 48 张）", size="sm")
+                    pose_preview = gr.Gallery(label="点击参考图加入图片编辑", columns=4, height=280, preview=True)
+                    pose_results = gr.State([])
+                    pose_selected = gr.State([])
+                    pose_hint = gr.Markdown("尚未选择姿势参考图。与上传图片合计最多 4 张。")
+                    pose_clear = gr.Button("清空所选姿势", size="sm")
                 with gr.Row():
                     model = gr.Dropdown(choices=opts, value=default_id,
                         label="当前可用模型", interactive=True)
@@ -196,15 +233,32 @@ def create_ui():
                     show_label=True, preview=True)
                 info = gr.Textbox(label="执行信息", lines=3)
         model.change(selected_model, inputs=[model],
-            outputs=[size, model_info, mode, source, edit_warning], api_visibility="private")
+            outputs=[size, model_info, mode, source, edit_warning, pose_panel], api_visibility="private")
         mode.change(update_mode, inputs=[mode, model],
-            outputs=[source, edit_warning], api_visibility="private")
+            outputs=[source, edit_warning, pose_panel], api_visibility="private")
+        def lookup_poses(keyword, category):
+            try:
+                found = search_poses(keyword, category)
+            except Exception:
+                raise gr.Error("姿势图库目前不可访问，请稍后重试或通过原站选择。") from None
+            return gallery_items(found), found, f"展示 {len(found)} 张姿势。点击图像加入参考。"
+
+        pose_search.click(lookup_poses, inputs=[pose_keyword, pose_category],
+            outputs=[pose_preview, pose_results, pose_hint], api_visibility="private")
+
+        def choose_pose(results, selected, evt: gr.SelectData):
+            return add_selected_pose(results or [], selected or [], evt.index)
+
+        pose_preview.select(choose_pose, inputs=[pose_results, pose_selected],
+            outputs=[pose_selected, pose_hint], api_visibility="private")
+        pose_clear.click(lambda: ([], "已清空姿势参考图"), outputs=[pose_selected, pose_hint],
+            api_visibility="private")
         refresh.click(refresh_models, outputs=[model, info], api_visibility="private")
         run.click(generate,
-            inputs=[mode, model, prompt, source, size, count, seed, token, extra],
+            inputs=[mode, model, prompt, source, size, count, seed, token, extra, pose_selected],
             outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
         if default_id:
             demo.load(selected_model, inputs=[model],
-                outputs=[size, model_info, mode, source, edit_warning], api_visibility="private")
+                outputs=[size, model_info, mode, source, edit_warning, pose_panel], api_visibility="private")
     demo.queue(default_concurrency_limit=2)
     return demo
