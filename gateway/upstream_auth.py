@@ -22,9 +22,18 @@ def forward_headers(ip_token: str | None) -> dict[str, str]:
 
 
 def client_kwargs(token: str | None, ip_token: str | None) -> dict:
-    """Use both the explicit account token and the HF edge identity proof."""
+    """Use caller-owned HF token OR the HF edge identity, never competing identities.
+
+    An incognito browser may have an anonymous X-IP-Token while the user
+    explicitly entered a Pro HF Token in the studio. Passing both can make
+    the upstream quota engine attribute the call to the anonymous identity.
+    API calls carrying only X-HF-Token already work, so mirror that behavior.
+    """
     kwargs = {"token": token or False, "verbose": False}
-    headers = forward_headers(ip_token)
-    if headers:
-        kwargs["headers"] = headers
+    # Explicit per-request HF Token takes precedence over a browser edge token.
+    # Forward the edge token only when no HF Token was supplied.
+    if not token:
+        headers = forward_headers(ip_token)
+        if headers:
+            kwargs["headers"] = headers
     return kwargs
