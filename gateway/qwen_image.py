@@ -5,14 +5,20 @@ names instead of silently hardcoding the official app's API for an unknown fork.
 """
 from __future__ import annotations
 import json
+import logging
 from gradio_client import Client, handle_file
+
+
+logger = logging.getLogger(__name__)
 
 
 def api_endpoints(client):
     schema = client.view_api(print_info=False, return_format="dict")
     if not isinstance(schema, dict):
         raise ValueError("上游 Gradio API Schema 不可用")
-    return schema.get("named_endpoints", {})
+    endpoints = schema.get("named_endpoints", {})
+    logger.info("Qwen discovered API endpoints: %s", list(endpoints))
+    return endpoints
 
 
 def parameters(api, endpoint):
@@ -65,7 +71,7 @@ def run(profile, payload, token, image_paths=None):
         "negative_prompt": extras.get("negative_prompt", ""),
         "enable_extend": extras.get("enable_extend", False),
         "quality": extras.get("quality", "speed"),
-        "custom_size": extras.get("custom_size", False),
+        "custom_size": extras.get("custom_size", True),
         "input_images": [handle_file(p) for p in (image_paths or [])],
         "image_paths": [handle_file(p) for p in (image_paths or [])],
         "images": [handle_file(p) for p in (image_paths or [])],
@@ -79,6 +85,7 @@ def run(profile, payload, token, image_paths=None):
         prepare = endpoint(api, ["/prepare_request", "/prepare"])
         generate = endpoint(api, ["/generate_request"])
         if prepare and generate:
+            logger.info("Qwen adapter two-stage call: %s -> %s", prepare, generate)
             prepared = client.predict(api_name=prepare, **arguments(api, prepare, values))
             if not isinstance(prepared, (list, tuple)) or len(prepared) < 4:
                 raise ValueError(f"上游 {prepare} 未返回预期的 request_state")
@@ -96,6 +103,7 @@ def run(profile, payload, token, image_paths=None):
                 )
             if image_paths and not ({"image", "images", "input_images", "image_paths"} & parameters(api, direct)):
                 raise ValueError("当前生图接口不接受参考图")
+            logger.info("Qwen adapter direct endpoint: %s", direct)
             result = client.predict(api_name=direct, **arguments(api, direct, values))
         return result_bytes(select_result(result, profile.result_path), profile)
     finally:
