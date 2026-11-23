@@ -17,7 +17,7 @@ class IdentityForwardingTests(unittest.TestCase):
         secret = "hf_NOT_A_REAL_TOKEN_SECRET9876"
         self.assertEqual(token_tail(secret), "****9876")
         self.assertEqual(token_tail(None), "none")
-        with self.assertLogs("gateway.upstream_auth", level="INFO") as captured:
+        with self.assertLogs("uvicorn.error", level="INFO") as captured:
             result = client_kwargs(secret, "edge-token")
         text = "\\n".join(captured.output)
         self.assertIn("****9876", text)
@@ -39,7 +39,7 @@ class IdentityForwardingTests(unittest.TestCase):
             (root / ".history_bucket_ready").write_text("test")
             with patch.object(history, "ROOT", root):
                 with patch("gateway.ui.invoke", return_value=buffer.getvalue()):
-                    with self.assertLogs("gateway.ui", level="INFO") as captured:
+                    with self.assertLogs("uvicorn.error", level="INFO") as captured:
                         ui.generate("文生图", "z-image-turbo", "cat", [],
                                     "1024x1024", 1, -1, secret, "{}", "",
                                     request=SimpleNamespace(headers={}))
