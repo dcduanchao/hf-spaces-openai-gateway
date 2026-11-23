@@ -23,10 +23,11 @@ MAX_PROMPT = 4000
 
 def _ready() -> Path:
     root = ROOT
-    # A marker is explicitly created by the administrator after the bucket is
-    # mounted. Never silently write history into an ephemeral /data directory.
-    if not (root / ".history_bucket_ready").is_file():
-        raise RuntimeError("History Bucket is not configured: mount duan0320/image-history read-write at /data and create .history_bucket_ready")
+    # Do not write into an ephemeral /data directory if the volume was not mounted.
+    # Space bucket volumes are filesystem mounts. A marker may additionally be
+    # used for explicitly configured nested/custom mounts.
+    if not os.path.ismount(root) and not (root / ".history_bucket_ready").is_file():
+        raise RuntimeError("History Bucket not mounted: attach duan0320/image-history read-write at /data")
     if not os.access(root, os.W_OK):
         raise RuntimeError("History Bucket mount is not writable")
     return root / "gateway-history"
