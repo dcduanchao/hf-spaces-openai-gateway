@@ -48,6 +48,41 @@
         }
       },
       "result_path": []
+    },
+    {
+      "id": "z-image-turbo",
+      "adapter": "z_image",
+      "space_id": "mrfakename/Z-Image-Turbo",
+      "api_name": "/generate_image",
+      "enabled": true,
+      "description": "Z-Image-Turbo · 第三方 ZeroGPU Space · 文生图（8 步默认）。使用原作者的 Gradio API，不在本网关加载模型。",
+      "modes": [
+        "generations"
+      ],
+      "default_size": "1024x1024",
+      "allowed_sizes": [
+        "512x512",
+        "768x768",
+        "1024x1024",
+        "768x1024",
+        "1024x768",
+        "512x768",
+        "768x512"
+      ],
+      "bindings": {},
+      "fixed": {},
+      "extras": {
+        "steps": {
+          "target": "num_inference_steps",
+          "kind": "int",
+          "default": 8,
+          "min": 1,
+          "max": 30
+        }
+      },
+      "result_path": [
+        0
+      ]
     }
   ]
 }

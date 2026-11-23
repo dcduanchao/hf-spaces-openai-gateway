@@ -116,6 +116,9 @@ def invoke(profile: Profile, payload: dict, token: str | None, image_paths=None)
     if profile.adapter == "qwen_image":
         from .qwen_image import run
         return run(profile, payload, token, image_paths)
+    if profile.adapter == "z_image":
+        from .z_image import run
+        return run(profile, payload, token, image_paths)
     kwargs = make_kwargs(profile, payload, image_paths)
     client = Client(profile.space_id, token=token or False, verbose=False)
     try:
