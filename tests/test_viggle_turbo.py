@@ -11,7 +11,7 @@ from PIL import Image
 from gateway import history
 from gateway.main import app
 from gateway.models import load_profiles
-from gateway.viggle_turbo import build_args, run, MAX_REFERENCES, SQUARE_PRESET
+from gateway.viggle_turbo import build_args, run, MAX_REFERENCES, SQUARE_PRESET, CUSTOM_PRESET, MAX_SEED
 
 
 def png():
@@ -49,11 +49,32 @@ class ViggleContractTests(unittest.TestCase):
                 "prompt": "hello", "size": "1024x1536", "seed": -1,
                 "extra_body": {"steps": 7},
             }, ["one.png","two.png","three.png","four.png"])
-        self.assertEqual(args[2], "Custom")
+        self.assertEqual(args[2], CUSTOM_PRESET)
         self.assertEqual([x["image"]["path"] for x in args[1]],
                          ["one.png","two.png","three.png","four.png"])
         self.assertEqual(args[5:10], ["Off",7,1024,1536,"v0.3"])
         self.assertFalse(args[4])
+
+    def test_random_seed_is_within_upstream_slider_range(self):
+        # Before fix, randbelow(2**32) exceeded the Viggle UI's 31-bit slider
+        # maximum about half of the time and Gradio rejected the request.
+        with patch("gateway.viggle_turbo.secrets.randbelow", return_value=MAX_SEED) as rnd:
+            args = build_args(self.profile, {"prompt": "cat", "seed": -1})
+        rnd.assert_called_once_with(MAX_SEED + 1)
+        self.assertEqual(args[3], MAX_SEED)
+        self.assertFalse(args[4])
+
+    def test_seed_over_upstream_limit_rejected_before_client_call(self):
+        with self.assertRaisesRegex(ValueError, "2147483647"):
+            build_args(self.profile, {"prompt": "cat", "seed": MAX_SEED + 1})
+
+    def test_custom_image_size_matches_upstream_dropdown(self):
+        self.assertEqual(
+            build_args(self.profile, {"prompt": "cat", "size": "1024x1536"})[2],
+            "Custom · set width and height below",
+        )
+        with self.assertRaisesRegex(ValueError, "32"):
+            build_args(self.profile, {"prompt": "cat", "size": "1000x1500"})
 
     def test_invalid_options_and_reference_limit(self):
         for extras in ({"model_version":"v0.2.1"}, {"enhance_prompt":"On"}, {"steps":10}):
