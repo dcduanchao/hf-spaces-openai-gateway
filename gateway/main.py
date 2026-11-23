@@ -109,7 +109,7 @@ def profile_for(model: str, mode: str):
     return profile
 
 
-def produce(payload: dict, token: str | None, mode="generations", paths=None):
+def produce(payload: dict, token: str | None, mode="generations", paths=None, ip_token=None):
     p = profile_for(payload["model"], mode)
     response_format = payload.get("response_format", "url")
     if response_format not in ("url", "b64_json"):
@@ -145,7 +145,7 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None):
             item = dict(payload)
             if item.get("seed", -1) >= 0:
                 item["seed"] += i
-            png = invoke(p, item, token, image_paths=paths)
+            png = invoke(p, item, token, image_paths=paths, ip_token=ip_token)
             history.store_image(record_id, png)
             if response_format == "url":
                 data.append({"url": public_image_url(save_temp_image(png))})
@@ -219,9 +219,10 @@ def serve_temp_image(image_name: str):
 
 
 @app.post("/v1/images/generations")
-def generate(body: GenerateRequest, authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
+def generate(body: GenerateRequest, request: Request, authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
     token = request_hf_token(authorization, x_hf_token)
-    return produce(body.model_dump(exclude_none=True, exclude_unset=False), token)
+    return produce(body.model_dump(exclude_none=True, exclude_unset=False), token,
+                   ip_token=request.headers.get("x-ip-token"))
 
 def _edit_json_images(payload: dict) -> list[tuple[str, str]]:
     """Accept image/image_urls/images, preserving order and rejecting ambiguous mixes."""
@@ -354,7 +355,7 @@ async def edit(request: Request, authorization: str | None = Header(default=None
             target = Path(folder) / f"input_{index}.png"
             target.write_bytes(png)
             paths.append(str(target))
-        return await asyncio.to_thread(produce, body.model_dump(), token, "edits", paths)
+        return await asyncio.to_thread(produce, body.model_dump(), token, "edits", paths,\n                                       request.headers.get("x-ip-token"))
 
 # Serve Gradio studio on / while preserving the FastAPI image endpoints.
 import gradio as gr
