@@ -19,6 +19,7 @@ from .upstream_logging import logger
 # Exact preset label documented by the upstream /generate API.
 # Other valid dimensions take its "Custom" path with explicit width/height.
 SQUARE_PRESET = "1:1 · 1024×1024 (1024² area)"
+CUSTOM_PRESET = "Custom · set width and height below"
 MAX_REFERENCES = 4
 MAX_SEED = 2**31 - 1  # Matches Viggle Gradio Seed widget upper bound
 
@@ -62,7 +63,7 @@ def build_args(profile, payload, image_paths=None):
         width < 512 or height < 512 or width % 32 or height % 32
     ):
         raise ValueError("Viggle 自定义宽高需至少 512，且为 32 的倍数")
-    preset = SQUARE_PRESET if (width, height) == (1024, 1024) else "Custom"
+    preset = SQUARE_PRESET if (width, height) == (1024, 1024) else CUSTOM_PRESET
     return [
         payload["prompt"],  # Prompt
         gallery,            # References (optional)
