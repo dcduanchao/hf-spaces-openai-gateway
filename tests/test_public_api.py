@@ -11,6 +11,35 @@ class PublicApiTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
+    def test_hf_status_anonymous(self):
+        response = self.client.get("/v1/hf/status")
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(data["status"], "anonymous")
+        self.assertIsNone(data["remaining_seconds"])
+        self.assertIn("checked_at", data)
+
+    def test_hf_status_token_scoped(self):
+        fake = {"authenticated": True, "status": "valid", "username": "demo",
+                "remaining_seconds": 100, "base_seconds": 200, "used_seconds": 100,
+                "resets_at": None, "checked_at": "2026-11-23T00:00:00Z", "message": "ok"}
+        with patch("gateway.main.quota_status", return_value=fake) as quota:
+            response = self.client.get("/v1/hf/status", headers={"X-HF-Token": "hf_CALLER123"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), fake)
+        quota.assert_called_once_with("hf_CALLER123")
+
+    def test_hf_status_invalid_token_is_401(self):
+        with patch("gateway.main.quota_status", side_effect=PermissionError("internal hf_SECRETTOKEN")):
+            response = self.client.get("/v1/hf/status", headers={"X-HF-Token": "hf_CALLER123"})
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("hf_SECRETTOKEN", response.text)
+
+    def test_request_duration_headers(self):
+        response = self.client.get("/v1/models")
+        self.assertIn("X-Request-ID", response.headers)
+        self.assertGreaterEqual(float(response.headers["X-Request-Duration-Ms"]), 0)
+
     def test_models_public_without_secrets(self):
         with patch.dict(os.environ, {}, clear=True):
             response = self.client.get("/v1/models")
