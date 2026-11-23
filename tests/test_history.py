@@ -55,6 +55,45 @@ class HistoryTests(unittest.TestCase):
             self.assertEqual(deleted.status_code, 200)
             self.assertEqual(self.client.get("/admin/api/history", headers=headers).json()["total"], 0)
 
+    def test_default_page_size_twenty(self):
+        for i in range(23):
+            history.new_record("qwen-image-2.1", "generations", f"prompt {i}", {})
+        with patch.dict("os.environ", {"ADMIN_API_KEY": "secret"}):
+            first = self.client.get("/admin/api/history", headers={"X-Admin-Key": "secret"})
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(first.json()["total"], 23)
+            self.assertEqual(len(first.json()["items"]), 20)
+            second = self.client.get("/admin/api/history?offset=20",
+                                     headers={"X-Admin-Key": "secret"})
+            self.assertEqual(len(second.json()["items"]), 3)
+
+    def test_bulk_delete_requires_auth_and_confirmation_and_removes_images(self):
+        first = history.new_record("qwen-image-2.1", "edits", "one", {})
+        image = history.store_image(first, b"test-image")
+        second = history.new_record("qwen-image-2.1", "edits", "two", {})
+        unrelated = self.root / "unrelated.txt"
+        unrelated.write_text("keep")
+        with patch.dict("os.environ", {"ADMIN_API_KEY": "secret"}):
+            url = "/admin/api/history"
+            self.assertEqual(self.client.delete(url).status_code, 401)
+            headers = {"X-Admin-Key": "secret"}
+            self.assertEqual(self.client.delete(url, headers=headers).status_code, 400)
+            headers["X-Confirm-Delete"] = "DELETE_ALL_HISTORY"
+            result = self.client.delete(url, headers=headers)
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(result.json(), {"deleted": 2, "failed": 0})
+            self.assertEqual(self.client.get(url, headers=headers).json()["total"], 0)
+            self.assertEqual(self.client.get(
+                f"/admin/api/history/{first}/images/{image}", headers=headers).status_code, 404)
+            self.assertTrue(unrelated.is_file())
+
+    def test_bulk_delete_unmounted_bucket_is_safe(self):
+        (self.root / ".history_bucket_ready").unlink()
+        with patch.dict("os.environ", {"ADMIN_API_KEY": "secret"}):
+            result = self.client.delete("/admin/api/history", headers={
+                "X-Admin-Key": "secret", "X-Confirm-Delete": "DELETE_ALL_HISTORY"})
+        self.assertEqual(result.status_code, 503)
+
     def test_missing_bucket_never_uses_ephemeral_storage(self):
         (self.root / ".history_bucket_ready").unlink()
         with self.assertRaises(RuntimeError):
@@ -68,7 +107,7 @@ class HistoryTests(unittest.TestCase):
         self.assertIn('id="lightbox"', html)
         self.assertIn("modal.showModal()", html)
         self.assertIn('id="output-images"', html)
-        self.assertIn('id="input-images"', html)
+        self.assertIn('id="input-images"', html)\n        self.assertIn("PAGE_SIZE=20", html)\n        self.assertIn("prompt-preview", html)\n        self.assertIn('id="delete-all"', html)
         self.assertNotIn("ADMIN_API_KEY_VALUE", html)
         self.assertIn("no-store", response.headers["cache-control"])
 
