@@ -116,6 +116,16 @@ def refresh_models():
         return gr.update(choices=[], value=None), "暂无已启用模型，请检查 gateway/catalog.json"
     return gr.update(choices=opts, value=opts[0][1]), "模型列表已刷新"
 
+def preview_uploaded_images(files):
+    """Show thumbnails of both uploaded and confirmed gallery files."""
+    items = []
+    for index, raw in enumerate(files or []):
+        file_path = Path(str(raw))
+        if file_path.is_file():
+            items.append((str(file_path), f"编辑参考图 {index + 1}"))
+    return items
+
+
 def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json):
     p = profiles().get(model_id)
     if not p:
@@ -202,8 +212,11 @@ def create_ui():
                 mode = gr.Radio(["文生图", "图片编辑"], value="文生图", label="生成模式")
                 prompt = gr.Textbox(label="图片描述", lines=5, max_lines=8,
                     placeholder="描述你想生成的画面，或者说明如何修改原图……")
-                source = gr.File(file_count="multiple", type="filepath", file_types=["image"],
-                    label="上传图片 / 已确认图库参考图（最多 4 张，点击图库图片后需确认）", visible=False)
+                with gr.Column(visible=False) as upload_panel:
+                    source = gr.File(file_count="multiple", type="filepath", file_types=["image"],
+                        label="上传图片 / 已确认图库参考图（最多 4 张）")
+                    upload_preview = gr.Gallery(label="已加入编辑的图片预览（包括手动上传与图库确认）",
+                        columns=4, height=180, preview=True)
                 edit_warning = gr.Markdown("", visible=True)
                 with gr.Accordion("🧑 人像 · 👗 服装 · 🧍 姿势参考图库", open=False, visible=False) as pose_panel:
                     gr.Markdown(
@@ -252,9 +265,9 @@ def create_ui():
                     show_label=True, preview=True)
                 info = gr.Textbox(label="执行信息", lines=3)
         model.change(selected_model, inputs=[model],
-            outputs=[size, model_info, mode, source, edit_warning, pose_panel], api_visibility="private")
+            outputs=[size, model_info, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
         mode.change(update_mode, inputs=[mode, model],
-            outputs=[source, edit_warning, pose_panel], api_visibility="private").then(
+            outputs=[upload_panel, edit_warning, pose_panel], api_visibility="private").then(
                 reference_preview_for_mode, inputs=[mode, model, reference_kind, confirmed_files],
                 outputs=[pose_category, pose_preview, pose_results, pose_hint],
                 api_visibility="private")
@@ -297,6 +310,8 @@ def create_ui():
 
         pose_clear.click(clear_gallery_files, inputs=[source, confirmed_files],
             outputs=[source, confirmed_files, pose_hint], api_visibility="private")
+        source.change(preview_uploaded_images, inputs=[source],
+            outputs=[upload_preview], api_visibility="private")
         refresh.click(refresh_models, outputs=[model, info], api_visibility="private")
         run.click(generate,
             inputs=[mode, model, prompt, source, size, count, seed, token, extra],
