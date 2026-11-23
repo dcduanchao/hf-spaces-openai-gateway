@@ -30,7 +30,7 @@ pinned: false
 - `GET /v1/hf/status`：可选 HF Token 身份验证、ZeroGPU 剩余额度、重置时间和查询时间
 - 所有 HTTP 请求记录 `[gateway-request]` 总耗时，并返回 `X-Request-Duration-Ms` Header
 - `POST /v1/images/generations`：JSON，OpenAI-compatible subset
-- `POST /v1/images/edits`：multipart，最多 4 张图片，需配置图像输入绑定
+- `POST /v1/images/edits`：Qwen 支持单图/多图编辑（1～4 张），兼容 multipart 图片上传、公开 HTTPS 图片 URL JSON 和文件+URL 混合输入。详见 [OpenAI 图片编辑完整示例](docs/OPENAI_API.md#4-qwen-image-21-图片编辑单图多图公开-url)
 - `GET /docs`：FastAPI API 文档
 
 OpenAI 原始字段（`model`、`prompt`、`size`、`n`、`response_format`）与模型额外参数（Qwen 的 `quality` / `negative_prompt` / `custom_size`，Z-Image 的 `steps`）使用方式见 [完整文档](docs/OPENAI_API.md)。
