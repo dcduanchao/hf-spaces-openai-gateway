@@ -62,6 +62,19 @@ class ConfirmationTests(unittest.TestCase):
         self.assertEqual(confirmed, [])
         self.assertIn("保留", hint)
 
+    def test_upload_area_thumbnails_show_manual_and_confirmed(self):
+        from gateway.ui import preview_uploaded_images
+        with TemporaryDirectory() as folder:
+            first = Path(folder) / "manual.png"
+            second = Path(folder) / "ref-confirmed.png"
+            first.write_bytes(b"a")
+            second.write_bytes(b"b")
+            preview = preview_uploaded_images([str(first), str(second)])
+        self.assertEqual(len(preview), 2)
+        self.assertEqual(preview[0][0], str(first))
+        self.assertEqual(preview[1][0], str(second))
+        self.assertIn("参考图 2", preview[1][1])
+
     def test_invalid_gallery_reference_never_downloaded(self):
         forged = {**self.reference, "url": "https://untrusted.example/private.jpg"}
         with patch.object(confirm, "load_references", return_value=[self.reference]):
