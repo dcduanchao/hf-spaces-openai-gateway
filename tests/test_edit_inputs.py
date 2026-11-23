@@ -103,6 +103,28 @@ class EditUrlTests(unittest.TestCase):
             with self.subTest(size=size), self.assertRaises(ValueError):
                 parse_size(size, profile)
 
+    def test_private_window_token_forwarded_for_both_edit_routes(self):
+        for route in ("/v1/images/edit", "/v1/images/edits"):
+            for headers in ({"X-HF-Token": "hf_USERPRO123"},
+                            {"Authorization": "Bearer hf_USERPRO123"}):
+                with self.subTest(route=route, header=list(headers)):
+                    with patch("gateway.main.download_public_image", return_value=tiny_png()):
+                        with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
+                            response = self.client.post(route, headers=headers, json=self.payload(
+                                images=[{"image_url": "https://example.org/reference.png"}]))
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(invoke.call_args.args[2], "hf_USERPRO123")
+
+    def test_multipart_token_forwarding(self):
+        with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
+            response = self.client.post(
+                "/v1/images/edits", headers={"X-HF-Token": "hf_USERPRO123"},
+                data={"model": "qwen-image-2.1", "prompt": "make a portrait",
+                      "response_format": "b64_json"},
+                files={"image": ("ref.png", tiny_png(), "image/png")})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(invoke.call_args.args[2], "hf_USERPRO123")
+
     def test_multiple_public_urls(self):
         urls = ["https://images.example.org/one.png", "https://images.example.org/two.png"]
         with patch("gateway.main.download_public_image", return_value=tiny_png()) as get:
