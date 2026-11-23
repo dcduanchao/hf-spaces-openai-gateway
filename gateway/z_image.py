@@ -13,6 +13,7 @@ from gradio_client import Client
 from .adapter import parse_size, result_bytes, select_result
 from .models import validate_extra
 from .upstream_logging import predict_logged
+from .upstream_auth import client_kwargs
 
 
 def build_kwargs(profile, payload, image_paths=None):
@@ -57,9 +58,9 @@ def build_kwargs(profile, payload, image_paths=None):
     }
 
 
-def run(profile, payload, token, image_paths=None):
+def run(profile, payload, token, image_paths=None, ip_token=None):
     kwargs = build_kwargs(profile, payload, image_paths)
-    client = Client(profile.space_id, token=token or False, verbose=False)
+    client = Client(profile.space_id, **client_kwargs(token, ip_token))
     try:
         result = predict_logged(
             client, space_id=profile.space_id,
