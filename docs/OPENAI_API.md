@@ -8,6 +8,7 @@
 - 详细模型列表：`GET /v1/models/detail`
 - 文生图：`POST /v1/images/generations`
 - 图片编辑：`POST /v1/images/edits`
+- 临时图片访问：`GET /v1/files/{id}.png`（URL 返回格式）
 - HF Token 状态与 ZeroGPU 额度：`GET /v1/hf/status`
 - 健康检查：`GET /health`
 
@@ -97,6 +98,61 @@ for model in client.models.list().data:
 curl -sS "$GATEWAY_BASE_URL/models/detail"
 ```
 
+## 临时 URL 图片返回（默认）
+
+现在 **`response_format=url` 是默认值**。Qwen Image 2.1 文生图、图片编辑和 Z-Image-Turbo 文生图均支持返回临时 URL。图片先由网关保存为 PNG，再通过本网关的 `GET /v1/files/{id}.png` 公开下载，不暴露原始上游 Space 文件路径。
+
+Postman → `POST /v1/images/generations` → Body → raw → JSON：
+
+```json
+{
+  "model": "z-image-turbo",
+  "prompt": "A cute cat in sunlight",
+  "size": "1024x1024",
+  "n": 1,
+  "response_format": "url",
+  "seed": -1,
+  "extra_body": {"steps": 9}
+}
+```
+
+返回结构示例（URL 是示意，非真实已生成文件）：
+
+```json
+{
+  "created": 1795400000,
+  "data": [
+    {
+      "url": "https://duan0320-hf-spaces-openai-gateway.hf.space/v1/files/0123456789abcdef0123456789abcdef.png"
+    }
+  ],
+  "model": "z-image-turbo"
+}
+```
+
+**链接有效期为 30 分钟**，过期后返回 404 `image_not_found`。Space 重启、重新部署、容器迁移或使用多个未共享存储的实例时，文件可能提前消失；此接口不适合长期存储图片。临时链接是公开的随机 URL，任何持有链接的人均可在有效期内查看图片，因此不要分享敏感图像的链接。
+
+OpenAI Python SDK：
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://duan0320-hf-spaces-openai-gateway.hf.space/v1",
+    api_key="anonymous",
+)
+result = client.images.generate(
+    model="z-image-turbo",
+    prompt="A cat at a window",
+    size="1024x1024",
+    response_format="url",
+    extra_body={"steps": 9},
+)
+print(result.data[0].url)
+```
+
+如需原来的 Base64 图片，请**显式**设置 `response_format="b64_json"`（Postman 同理）；下文部分示例为了演示本地 PNG 保存，仍使用 Base64。
+
 ## 请求参数：OpenAI 标准字段与模型额外字段
 
 **特别注意：`model`、`prompt`、`size`、`n`、`response_format` 属于 OpenAI Images API 风格的原始字段；`seed` 和模型特有设置属于网关扩展参数。**
@@ -107,7 +163,7 @@ curl -sS "$GATEWAY_BASE_URL/models/detail"
 | 标准 OpenAI 风格 | `prompt` | 支持 | 支持 | JSON 顶层或 SDK 直接参数 |
 | 标准 OpenAI 风格 | `size` | 支持（受支持尺寸限制） | 支持（受支持尺寸限制） | JSON 顶层或 SDK 直接参数 |
 | 标准 OpenAI 风格 | `n` | 1–4 | 1–4 | 网关多次串行执行 |
-| 标准 OpenAI 风格 | `response_format` | 仅 `b64_json` | 仅 `b64_json` | `url` 不支持 |
+| 标准 OpenAI 风格 | `response_format` | `url`（默认）或 `b64_json` | `url`（默认）或 `b64_json` | URL 临时有效 |
 | 网关扩展 | `seed` | -1 或非负整数 | -1 或非负整数 | SDK 的 `extra_body` 或 JSON 顶层 |
 | Qwen 专属 | `negative_prompt` | 字符串，默认空 | 不支持 | SDK 的 `extra_body` |
 | Qwen 专属 | `quality` | `speed` / `quality` | 不支持 | SDK 的 `extra_body` |
@@ -123,7 +179,7 @@ curl -sS "$GATEWAY_BASE_URL/models/detail"
 | 标准 OpenAI 风格 | `prompt` | 支持 | 支持 | JSON 顶层或 SDK 直接参数 |
 | 标准 OpenAI 风格 | `size` | 支持（受支持尺寸限制） | 支持（受支持尺寸限制） | JSON 顶层或 SDK 直接参数 |
 | 标准 OpenAI 风格 | `n` | 1–4 | 1–4 | 网关多次串行执行 |
-| 标准 OpenAI 风格 | `response_format` | 仅 `b64_json` | 仅 `b64_json` | `url` 不支持 |
+| 标准 OpenAI 风格 | `response_format` | `url`（默认）或 `b64_json` | `url`（默认）或 `b64_json` | URL 临时有效 |
 | 网关扩展 | `seed` | -1 或非负整数 | -1 或非负整数 | SDK 的 `extra_body` 或 JSON 顶层 |
 | Qwen 专属 | `negative_prompt` | 字符串，默认空 | 不支持 | SDK 的 `extra_body` |
 | Qwen 专属 | `quality` | `speed` / `quality` | 不支持 | SDK 的 `extra_body` |
@@ -256,6 +312,7 @@ client = OpenAI(
 )
 result = client.images.generate(
     model="qwen-image-2.1",
+    response_format="b64_json",
     prompt="雨后的东京街道，霓虹灯倒影，电影摄影，丰富细节",
     size="1024x1024",
     n=1,
@@ -285,6 +342,7 @@ curl -sS "$GATEWAY_BASE_URL/images/generations" \
     "prompt": "A cozy bookstore at night, warm lighting",
     "size": "1024x1024",
     "n": 1,
+    "response_format": "b64_json",
     "seed": 42,
     "extra_body": {
       "quality": "speed",
@@ -318,6 +376,7 @@ client = OpenAI(
 with open("input.png", "rb") as image:
     result = client.images.edit(
         model="qwen-image-2.1",
+        response_format="b64_json",
         image=image,
         prompt="保留主体，将背景替换为樱花盛开的公园，写实风格",
         size="1024x1024",
@@ -337,6 +396,7 @@ curl -sS "$GATEWAY_BASE_URL/images/edits" \
   -F "image=@input.png;type=image/png" \
   -F "size=1024x1024" \
   -F "n=1" \
+  -F "response_format=b64_json" \
   -F "seed=42" \
   -F 'extra_body={"quality":"speed","negative_prompt":"blurry","custom_size":true}' \
   > edit-response.json
@@ -367,6 +427,7 @@ client = OpenAI(
 )
 result = client.images.generate(
     model="z-image-turbo",
+    response_format="b64_json",
     prompt="A cinematic photo of a futuristic city at sunrise, ultra detailed",
     size="1024x1024",
     n=1,
@@ -389,6 +450,7 @@ curl -sS "$GATEWAY_BASE_URL/images/generations" \
     "prompt": "A tiny robot reading in a sunlit library",
     "size": "1024x1024",
     "n": 1,
+    "response_format": "b64_json",
     "seed": 42,
     "extra_body": {"steps": 9}
   }' > z-image-response.json
@@ -454,7 +516,7 @@ Postman 中可以创建 Environment 变量：
   "prompt": "A futuristic city at sunrise, cinematic photo",
   "size": "1024x1024",
   "n": 1,
-  "response_format": "b64_json",
+  "response_format": "url",
   "seed": -1,
   "extra_body": {
     "steps": 9
@@ -483,6 +545,7 @@ X-HF-Token: {{hf_token}}
 | `image` | File | 本地选择 `input.png` |
 | `size` | Text | `1024x1024` |
 | `n` | Text | `1` |
+| `response_format` | Text | `b64_json` |
 | `seed` | Text | `42` |
 | `extra_body` | Text | `{"quality":"speed","negative_prompt":"blurry","custom_size":true}` |
 
@@ -542,7 +605,7 @@ if (image) {
 }
 ```
 
-`created` 是实际服务端 Unix 时间戳，上面只是结构示意。图片均转成 PNG，返回内容较大；如需保存，请解码 `b64_json`，不要直接当成下载 URL。
+`created` 是实际服务端 Unix 时间戳，上面只是结构示意。使用 `b64_json` 时返回 PNG Base64；使用 `url` 时返回可临时访问的 `/v1/files/{id}.png` URL，过期后不可使用。
 
 ## 8. 常见错误
 
