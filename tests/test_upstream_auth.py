@@ -16,7 +16,8 @@ class IdentityForwardingTests(unittest.TestCase):
     def test_auth_kwargs_use_both_credentials(self):
         result = client_kwargs("hf_PROUSER123", "signed-edge-token")
         self.assertEqual(result["token"], "hf_PROUSER123")
-        self.assertEqual(result["headers"], {"x-ip-token": "signed-edge-token"})
+        self.assertNotIn("headers", result)
+        self.assertEqual(client_kwargs(None, "signed-edge-token")["headers"], {"x-ip-token": "signed-edge-token"})
         self.assertEqual(client_kwargs(None, None), {"token": False, "verbose": False})
         self.assertEqual(forward_headers("bad\nheader"), {})
         self.assertEqual(forward_headers(""), {})
@@ -31,7 +32,7 @@ class IdentityForwardingTests(unittest.TestCase):
         self.assertEqual(result, b"png")
         kwargs = client.call_args.kwargs
         self.assertEqual(kwargs["token"], "hf_PROUSER123")
-        self.assertEqual(kwargs["headers"]["x-ip-token"], "signed-edge-token")
+        self.assertNotIn("headers", kwargs)
 
     def test_qwen_client_receives_edge_and_hf_tokens(self):
         profile = load_profiles()["qwen-image-2.1"]
@@ -42,7 +43,25 @@ class IdentityForwardingTests(unittest.TestCase):
                     result = qwen_image.run(profile, payload, "hf_PROUSER123", ip_token="edge-token")
         self.assertEqual(result, b"png")
         self.assertEqual(client.call_args.kwargs["token"], "hf_PROUSER123")
-        self.assertEqual(client.call_args.kwargs["headers"], {"x-ip-token": "edge-token"})
+        self.assertNotIn("headers", client.call_args.kwargs)
+
+    def test_anonymous_client_forwards_edge_identity(self):
+        profile = load_profiles()["z-image-turbo"]
+        payload = {"model": "z-image-turbo", "prompt": "cat", "size": "1024x1024"}
+        with patch("gateway.z_image.Client") as client:
+            with patch("gateway.z_image.predict_logged", return_value=["some/file.png", 42]):
+                with patch("gateway.z_image.result_bytes", return_value=b"png"):
+                    z_image.run(profile, payload, None, ip_token="browser-edge-token")
+        self.assertEqual(client.call_args.kwargs["token"], False)
+        self.assertEqual(client.call_args.kwargs["headers"], {"x-ip-token": "browser-edge-token"})
+
+    def test_pro_browser_ignores_anonymous_identity(self):
+        self.assertEqual(
+            client_kwargs("hf_USERPRO123", "anonymous-browser-edge"),
+            client_kwargs("hf_USERPRO123", None),
+        )
+        self.assertEqual(client_kwargs("hf_USERPRO123", "anonymous-browser-edge")["token"],
+                         "hf_USERPRO123")
 
     def test_api_propagates_edge_identity_not_persisted(self):
         with tempfile.TemporaryDirectory() as d:
