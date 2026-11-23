@@ -26,7 +26,7 @@ from .recipe_prompt import build_edit_prompt, STYLES
 from .upstream_auth import token_tail
 
 SIZE_LABEL = lambda s: s.replace("x", " × ")
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 def safe_upstream_error(exc):
