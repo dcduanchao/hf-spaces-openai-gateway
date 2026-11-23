@@ -14,7 +14,7 @@ from pathlib import Path
 import gradio as gr
 from PIL import Image
 
-from .adapter import invoke
+from .adapter import invoke, parse_size
 from .models import load_profiles
 from .token_quota import token_quota_info
 from . import history
@@ -142,7 +142,7 @@ def reset_edit_prompt(mode, files, confirmed, style):
     return (generated if generated else gr.skip()), True
 
 
-def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json):
+def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json, custom_dimensions=""):
     p = profiles().get(model_id)
     if not p:
         raise gr.Error("模型不存在或未启用，请刷新模型列表")
@@ -156,8 +156,11 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
         raise gr.Error("请上传图片，或先从图库预览并确认添加参考图片")
     if len(files) > 4:
         raise gr.Error("上传图片框最多 4 张参考图片")
-    if size not in p.allowed_sizes:
-        raise gr.Error("当前尺寸不受此模型支持")
+    size = (custom_dimensions or "").strip().replace("×", "x") or size
+    try:
+        parse_size(size, p)
+    except ValueError as exc:
+        raise gr.Error(f"图片尺寸无效：{exc}") from None
     try:
         extra = json.loads(extra_json or "{}")
         if not isinstance(extra, dict):
@@ -266,6 +269,9 @@ def create_ui():
                         label="当前可用模型", interactive=True)
                     size = gr.Dropdown(choices=sizes,
                         value=current.default_size if current else None, label="尺寸")
+                    custom_dimensions = gr.Textbox(
+                        label="自定义尺寸（可选，优先于下拉尺寸）",
+                        placeholder="例如 1024x1536；宽高各 256～4096，最多 16777216 像素")
                 with gr.Row():
                     count = gr.Slider(1, 4, value=1, step=1, label="生成数量")
                     seed = gr.Number(-1, precision=0, label="Seed（-1 随机）")
@@ -356,7 +362,7 @@ def create_ui():
             api_visibility="private")
         refresh.click(refresh_models, outputs=[model, info], api_visibility="private")
         run.click(generate,
-            inputs=[mode, model, prompt, source, size, count, seed, token, extra],
+            inputs=[mode, model, prompt, source, size, count, seed, token, extra, custom_dimensions],
             outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
         if default_id:
             demo.load(selected_model, inputs=[model],
