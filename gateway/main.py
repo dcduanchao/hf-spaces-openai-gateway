@@ -1,18 +1,44 @@
 from __future__ import annotations
 import base64
+import logging
+import uuid
 import os
 import re
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field, ConfigDict
 from .models import load_profiles
 from .adapter import invoke, parse_size
+from .token_quota import quota_status
 
 app = FastAPI(title="HF Spaces OpenAI Image Gateway", version="0.1.0")
+
+access_logger = logging.getLogger("uvicorn.error")
+
+
+@app.middleware("http")
+async def request_duration_log(request: Request, call_next):
+    """Log complete HTTP latency (including ZeroGPU queue); never log token or prompt."""
+    start = time.monotonic()
+    request_id = uuid.uuid4().hex[:12]
+    status = 500
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Request-Duration-Ms"] = str(round((time.monotonic() - start) * 1000))
+        return response
+    finally:
+        access_logger.info(
+            "[gateway-request] id=%s method=%s path=%s status=%s duration_ms=%d",
+            request_id, request.method, request.url.path, status,
+            round((time.monotonic() - start) * 1000),
+        )
+
 
 class GenerateRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -129,6 +155,20 @@ def models_detail():
         "sizes": p.allowed_sizes,
         "extra_parameters": {k: v.model_dump() for k, v in p.extras.items()},
     } for p in load_profiles().values()]}
+
+@app.get("/v1/hf/status")
+def hf_status(authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
+    """Optional caller HF Token status + ZeroGPU remaining quota / reset time."""
+    token = request_hf_token(authorization, x_hf_token)
+    try:
+        return quota_status(token)
+    except ValueError as exc:
+        err(400, "invalid_hf_token", str(exc))
+    except PermissionError:
+        err(401, "hf_token_invalid", "HF Token validation failed; check token permissions or expiration")
+    except ConnectionError:
+        err(502, "hf_quota_unavailable", "HF quota unavailable; ensure Billing read permission and retry later")
+
 
 @app.post("/v1/images/generations")
 def generate(body: GenerateRequest, authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
