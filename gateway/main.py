@@ -19,7 +19,7 @@ from .temp_images import get_temp_image, save_temp_image, public_image_url
 from . import history
 from .upstream_auth import token_tail
 from .admin import router as admin_router
-from .image_inputs import download_public_image, validate_png_bytes, ImageInputError
+from .image_inputs import download_public_image, decode_image_data_url, validate_png_bytes, ImageInputError
 
 app = FastAPI(title="HF Spaces OpenAI Image Gateway", version="0.1.0")
 app.include_router(admin_router)
@@ -236,7 +236,7 @@ def _edit_json_images(payload: dict) -> list[tuple[str, str]]:
     raw = payload[provided[0]]
     values = [raw] if isinstance(raw, (str, dict)) else raw
     if not isinstance(values, list) or not 1 <= len(values) <= 4:
-        err(400, "invalid_image_count", "1-4 image URLs required")
+        err(400, "invalid_image_count", "1-4 image inputs required")
     urls = []
     for item in values:
         if isinstance(item, dict):
@@ -244,8 +244,8 @@ def _edit_json_images(payload: dict) -> list[tuple[str, str]]:
                 err(400, "invalid_image", "Each image object must contain only image_url")
             item = item["image_url"]
         if not isinstance(item, str) or not item.strip():
-            err(400, "invalid_image", "JSON image inputs must be public HTTPS URL strings")
-        urls.append(("url", item))
+            err(400, "invalid_image", "JSON images must be public HTTPS URLs or Base64 Data URLs")
+        urls.append(("data_url" if item.startswith("data:") else "url", item))
     return urls
 
 
@@ -253,7 +253,7 @@ def _edit_json_images(payload: dict) -> list[tuple[str, str]]:
 @app.post("/v1/images/edits")
 async def edit(request: Request, authorization: str | None = Header(default=None),
                x_hf_token: str | None = Header(default=None)):
-    """OpenAI multipart edits + JSON public HTTPS URLs + mixed multipart URLs/files."""
+    """OpenAI edits with uploads, Base64 Data URLs and public HTTPS images."""
     import asyncio
     import json
     from pydantic import ValidationError
@@ -314,13 +314,13 @@ async def edit(request: Request, authorization: str | None = Header(default=None
                     if isinstance(value, UploadFile):
                         sources.append(("upload", value))
                     elif isinstance(value, str):
-                        sources.append(("url", value))
+                        sources.append(("data_url" if value.startswith("data:") else "url", value))
                     else:
                         err(400, "invalid_image", "image must be an uploaded file or public HTTPS URL")
                 elif key in ("image_url", "image_urls"):
                     if not isinstance(value, str):
                         err(400, "invalid_image", "image_url must be a public HTTPS URL")
-                    sources.append(("url", value))
+                    sources.append(("data_url" if value.startswith("data:") else "url", value))
         else:
             err(415, "unsupported_media_type", "Use application/json or multipart/form-data")
 
@@ -350,6 +350,8 @@ async def edit(request: Request, authorization: str | None = Header(default=None
                         err(400, "invalid_image", "Only PNG, JPEG and WebP supported")
                     content = await uploaded.read(10 * 1024 * 1024 + 1)
                     png = await asyncio.to_thread(validate_png_bytes, content)
+                elif kind == "data_url":
+                    png = await asyncio.to_thread(decode_image_data_url, value)
                 else:
                     png = await asyncio.to_thread(download_public_image, value)
             except ImageInputError as ex:
