@@ -82,6 +82,35 @@ def update_mode(mode, model_id):
     note = "" if (not editing or available) else "⚠️ 此模型暂未声明支持图片编辑。"
     return gr.update(visible=editing), gr.update(value=note), gr.update(visible=editing and available)
 
+def default_reference_preview(kind, selected=None):
+    """Load first 24 reference previews automatically, preserving selections."""
+    try:
+        available = reference_categories(kind)
+        found = search_references(kind, "", "全部", limit=24)
+        message = f"{kind} · 自动预览 {len(found)} 张图片；筛选是可选操作。"
+    except Exception:
+        available, found = ["全部"], []
+        message = f"{kind}图库暂不可访问，请稍后重试。"
+    return (
+        gr.update(choices=available, value="全部"),
+        gallery_items(found),
+        found,
+        message + "\n" + format_selection(selected or []),
+    )
+
+
+def reference_preview_for_mode(mode, model_id, kind, selected):
+    profile = profiles().get(model_id)
+    if mode != "图片编辑" or not profile or "edits" not in profile.modes:
+        return gr.skip(), gr.skip(), gr.skip(), gr.skip()
+    return default_reference_preview(kind, selected)
+
+
+def reset_reference_preview(kind, selected):
+    category, preview, rows, hint = default_reference_preview(kind, selected)
+    return gr.update(value=""), category, preview, rows, hint
+
+
 def refresh_models():
     opts = choices()
     if not opts:
@@ -203,9 +232,10 @@ def create_ui():
                     )
                     reference_kind = gr.Radio(["人像", "服装", "姿势"], value="人像", label="图库类型")
                     with gr.Row():
-                        pose_keyword = gr.Textbox(label="搜索中文关键词", placeholder="如：短发、白色连衣裙、站姿", scale=3)
+                        pose_keyword = gr.Textbox(label="关键词筛选（可选）", placeholder="如：短发、白色连衣裙、站姿", scale=3)
                         pose_category = gr.Dropdown(["全部"], value="全部", label="分类", scale=2)
-                    pose_search = gr.Button("查询参考图库（最多 48 张）", size="sm")
+                    pose_search = gr.Button("筛选预览图", size="sm")
+                    pose_reset = gr.Button("恢复默认预览", size="sm")
                     pose_preview = gr.Gallery(label="点击图片添加参考（可跨图库选择）", columns=4, height=300, preview=True)
                     pose_results = gr.State([])
                     pose_selected = gr.State([])
@@ -239,15 +269,11 @@ def create_ui():
         model.change(selected_model, inputs=[model],
             outputs=[size, model_info, mode, source, edit_warning, pose_panel], api_visibility="private")
         mode.change(update_mode, inputs=[mode, model],
-            outputs=[source, edit_warning, pose_panel], api_visibility="private")
-        def switch_reference_kind(kind):
-            try:
-                available = reference_categories(kind)
-            except Exception:
-                available = ["全部"]
-            return gr.update(choices=available, value="全部"), [], [], "已切换到" + kind + "图库。点击查询展示图片。"
-
-        reference_kind.change(switch_reference_kind, inputs=[reference_kind],
+            outputs=[source, edit_warning, pose_panel], api_visibility="private").then(
+                reference_preview_for_mode, inputs=[mode, model, reference_kind, pose_selected],
+                outputs=[pose_category, pose_preview, pose_results, pose_hint],
+                api_visibility="private")
+        reference_kind.change(default_reference_preview, inputs=[reference_kind, pose_selected],
             outputs=[pose_category, pose_preview, pose_results, pose_hint], api_visibility="private")
 
         def lookup_references(kind, keyword, category, selected):
@@ -262,6 +288,9 @@ def create_ui():
 
         pose_search.click(lookup_references, inputs=[reference_kind, pose_keyword, pose_category, pose_selected],
             outputs=[pose_preview, pose_results, pose_hint], api_visibility="private")
+        pose_reset.click(reset_reference_preview, inputs=[reference_kind, pose_selected],
+            outputs=[pose_keyword, pose_category, pose_preview, pose_results, pose_hint],
+            api_visibility="private")
 
         def choose_image(results, selected, evt: gr.SelectData):
             return choose_reference(results or [], selected or [], evt.index)
