@@ -53,6 +53,42 @@ class ReferenceGalleryTests(unittest.TestCase):
         self.assertIn("3", gallery.format_selection(selected))
         self.assertEqual(len(gallery.gallery_items(rows)), 3)
 
+    def test_auto_preview_has_no_search_requirement(self):
+        from gateway import ui
+        records = [{
+            "id": "portrait1", "kind": "人像", "category": "正脸参考",
+            "title": "短发", "detail": "短发", "keywords": "短发",
+            "url": "https://example.com/portrait.png"
+        }]
+        with patch.object(ui, "reference_categories", return_value=["全部", "正脸参考"]):
+            with patch.object(ui, "search_references", return_value=records) as search:
+                category, gallery_items, results, hint = ui.default_reference_preview("人像", [])
+        search.assert_called_once_with("人像", "", "全部", limit=24)
+        self.assertEqual(len(gallery_items), 1)
+        self.assertEqual(results, records)
+        self.assertIn("自动预览", hint)
+
+    def test_switch_library_preserves_selection(self):
+        from gateway import ui
+        selected = [{"kind": "人像", "title": "短发", "url": "https://example.com/a.png"}]
+        rows = [{"id": "outfit1", "kind": "服装", "category": "冬季穿搭",
+                 "title": "大衣", "detail": "", "keywords": "",
+                 "url": "https://example.com/b.png"}]
+        with patch.object(ui, "reference_categories", return_value=["全部", "冬季穿搭"]):
+            with patch.object(ui, "search_references", return_value=rows):
+                _, items, found, hint = ui.default_reference_preview("服装", selected)
+        self.assertEqual(found, rows)
+        self.assertIn("人像", hint)
+        self.assertIn("短发", hint)
+
+    def test_reset_preview_clears_filter(self):
+        from gateway import ui
+        with patch.object(ui, "default_reference_preview", return_value=(
+            {"choices": ["全部"], "value": "全部"}, [], [], "已重置")):
+            updated = ui.reset_reference_preview("姿势", [])
+        self.assertEqual(len(updated), 5)
+        self.assertEqual(updated[-1], "已重置")
+
     def test_reject_untrusted_selection(self):
         with patch.object(gallery, "load_references", return_value=[
             {"url": "https://raw.githubusercontent.com/anhao/ai-pose-gallery-zh/main/img/portrait/a.webp"}]):
