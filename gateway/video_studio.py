@@ -66,6 +66,22 @@ def refresh_video(video_id):
     except (OSError, httpx.RequestError, ValueError, KeyError):
         raise gr.Error("视频状态查询失败") from None
 
+POLL_SECONDS = 3
+
+def start_video_poll(*args):
+    video_id, result, video = submit_video(*args)
+    return video_id, result, video, gr.update(active=True), gr.update(interactive=False)
+
+def poll_video(video_id):
+    """One short polling tick; terminal tasks stop the per-session timer."""
+    try:
+        result, video = refresh_video(video_id)
+    except gr.Error:
+        # A transient status request failure must not lose the task ID.
+        return gr.skip(), gr.skip(), gr.update(active=True), gr.update(interactive=False)
+    terminal = result.get("status") in ("completed", "failed", "cancelled")
+    return result, video if video is not None else gr.skip(), gr.update(active=not terminal), gr.update(interactive=terminal)
+
 def create_video_tab():
     gr.Markdown("## 图生视频 · Wan 2.2 I2V V3\n上游：[duan0320/wan2-2-i2v-v3](https://huggingface.co/spaces/duan0320/wan2-2-i2v-v3)；分辨率由起始图片自动决定。")
     with gr.Row():
@@ -82,11 +98,14 @@ def create_video_tab():
                 advanced = gr.Code(value="{}", language="json", label="extra_body")
             submit = gr.Button("开始生成视频", variant="primary")
         with gr.Column():
-            task = gr.Textbox(label="视频任务 ID")
+            task = gr.Textbox(label="视频任务 ID", interactive=False)
+            timer = gr.Timer(value=POLL_SECONDS, active=False)
             status = gr.JSON(label="任务状态")
-            refresh = gr.Button("查询状态 / 下载结果")
+            refresh = gr.Button("手动查询 / 下载结果（备用）")
             video = gr.Video(label="生成视频", interactive=False)
-            gr.Markdown("提交后可点击查询状态，完成时自动显示 MP4；请妥善保管任务 ID。")
-    submit.click(submit_video, inputs=[first, last, prompt, seconds, steps, fps, seed, token, advanced],
-                 outputs=[task, status, video], api_visibility="private")
+            gr.Markdown("提交后每 3 秒自动查询状态，完成时自动显示 MP4，失败时停止查询；请妥善保管任务 ID。")
+    submit.click(start_video_poll, inputs=[first, last, prompt, seconds, steps, fps, seed, token, advanced],
+                 outputs=[task, status, video, timer, submit], api_visibility="private")
+    timer.tick(poll_video, inputs=[task], outputs=[status, video, timer, submit],
+               api_visibility="private", trigger_mode="once", concurrency_limit=4)
     refresh.click(refresh_video, inputs=[task], outputs=[status, video], api_visibility="private")

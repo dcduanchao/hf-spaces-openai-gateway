@@ -25,3 +25,24 @@ class VideoStudioTests(unittest.TestCase):
             response.status_code = 200
             response.json.return_value = {"status": "in_progress"}
             self.assertEqual(refresh_video("video_" + "a"*32), ({"status": "in_progress"}, None))
+
+    def test_poll_lifecycle(self):
+        from gateway.video_studio import poll_video
+        task_id = "video_" + "a"*32
+        for state in ("queued", "in_progress", "completed", "failed"):
+            with self.subTest(state=state), patch("gateway.video_studio.refresh_video",
+                    return_value=({"status": state}, "result.mp4" if state == "completed" else None)):
+                record, video, timer, button = poll_video(task_id)
+                self.assertEqual(record["status"], state)
+                terminal = state in ("completed", "failed")
+                self.assertEqual(timer["active"], not terminal)
+                self.assertEqual(button["interactive"], terminal)
+                if state == "completed":
+                    self.assertEqual(video, "result.mp4")
+
+    def test_submit_starts_timer(self):
+        from gateway.video_studio import start_video_poll
+        with patch("gateway.video_studio.submit_video", return_value=("video_" + "a"*32, {"status": "queued"}, None)):
+            result = start_video_poll()
+            self.assertTrue(result[3]["active"])
+            self.assertFalse(result[4]["interactive"])
