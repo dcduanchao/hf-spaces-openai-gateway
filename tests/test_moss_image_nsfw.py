@@ -10,7 +10,7 @@ from gateway import history
 from gateway.main import app
 from gateway.models import load_profiles
 from gateway.moss_image_nsfw import build_kwargs, run
-from gateway.ui import model_size_choices, model_space_link
+from gateway.ui import model_size_choices, model_space_link, resolve_seed
 
 
 class MossNsfwTests(unittest.TestCase):
@@ -18,6 +18,28 @@ class MossNsfwTests(unittest.TestCase):
         self.profile = load_profiles()["moss-image-nsfw"]
         self.request = {"model": "moss-image-nsfw", "prompt": "portrait",
                         "size": "1024x1024", "seed": 3}
+
+    def test_studio_random_seed_default_and_manual_seed(self):
+        self.assertEqual(resolve_seed(-1, True), -1)
+        self.assertEqual(resolve_seed(123, True), -1)
+        self.assertEqual(resolve_seed(123, False), 123)
+        self.assertEqual(resolve_seed(0, False), 0)
+        for invalid in (-1, -2, 1.5, 2**32, None):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                resolve_seed(invalid, False)
+
+    def test_openai_api_seed_optional_defaults_to_random(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".history_bucket_ready").write_text("ok")
+            with patch.object(history, "ROOT", root):
+                with patch("gateway.main.invoke", return_value=b"png") as invoker:
+                    response = TestClient(app).post("/v1/images/generations", json={
+                        "model": "moss-image-nsfw", "prompt": "portrait",
+                        "size": "1024x1024", "response_format": "b64_json",
+                    })
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(invoker.call_args.args[1]["seed"], -1)
 
     def test_profile_and_ui_link(self):
         self.assertEqual(self.profile.api_name, "/generate")
