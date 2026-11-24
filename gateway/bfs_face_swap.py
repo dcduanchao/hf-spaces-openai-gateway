@@ -14,7 +14,7 @@ from .upstream_logging import predict_logged
 TURBO = "Turbo · Viggle 6-step"
 BASE = "Base · Qwen-Image-2.1"
 BASE_MODELS = (TURBO, BASE)
-RESOLUTIONS = ("1024", "1536", "2048")
+RESOLUTIONS = (1024, 1536, 2048)
 DEFAULT_PROMPT = (
     "head_swap: start with <image1> as the base image, keeping its lighting, "
     "environment, and background. remove the head from <image1> completely "
@@ -47,7 +47,7 @@ def build_kwargs(profile, payload, image_paths, steps):
         "reference_face": handle_file(paths[0]),
         "target_image": handle_file(paths[1]),
         "base_model": base_model,
-        "resolution": "1536",
+        "resolution": 1536,
         "num_inference_steps": float(steps),
         "lora_scale": 1.0,
         "seed": float(0 if raw_seed == -1 else raw_seed),
