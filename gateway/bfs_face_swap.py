@@ -56,6 +56,19 @@ def build_kwargs(profile, payload, image_paths, steps):
     }
 
 
+def image_pair(result):
+    """Unpack ImageSlider (before, after), preserving both outputs in order."""
+    if not isinstance(result, (tuple, list)) or len(result) != 2:
+        raise RuntimeError("BFS 上游输出格式异常：应为 [before/after, used_seed]")
+    pair = result[0]
+    if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+        raise RuntimeError("BFS 上游未返回有效的 Before / After 图片对")
+    images = [select_result(value, []) if value is not None else None for value in pair]
+    if any(not isinstance(image, (str, dict)) for image in images):
+        raise RuntimeError("BFS 上游返回的 Before / After 图片路径无效")
+    return images
+
+
 def image_after(result):
     """Imageslider returns (before, after) or None. Return the swapped result."""
     if not isinstance(result, (tuple, list)) or len(result) != 2:
@@ -104,7 +117,7 @@ def run(profile, payload, token, image_paths=None, ip_token=None):
         response = predict_logged(client, space_id=profile.space_id,
                                   api_name=profile.api_name, kwargs=kwargs)
         phase = "result"
-        return result_bytes(image_after(response), profile)
+        return [result_bytes(image, profile) for image in image_pair(response)]
     except ValueError as exc:
         # Gradio endpoint validation, remote errors and response file handling
         # should never be categorized as malformed local user parameters.
