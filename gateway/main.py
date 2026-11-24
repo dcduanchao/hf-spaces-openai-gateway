@@ -277,7 +277,7 @@ async def edit(request: Request, authorization: str | None = Header(default=None
             raw = await request.json()
             if not isinstance(raw, dict):
                 err(400, "invalid_parameters", "JSON body must be an object")
-            sources = _edit_json_images(raw, 2 if raw.get("model") == "bfs-face-swap" else 8 if raw.get("model") == "h3-my-v5" else 4)
+            sources = _edit_json_images(raw, 2 if raw.get("model") in ("bfs-face-swap-t6", "bfs-face-swap-q2") else 8 if raw.get("model") == "h3-my-v5" else 4)
             reserved = {"model", "prompt", "size", "n", "seed", "response_format",
                         "extra_body", "image", "images", "image_urls"}
             # Accept SDK-style top-level extra fields just as generations does.
@@ -335,9 +335,9 @@ async def edit(request: Request, authorization: str | None = Header(default=None
         else:
             err(415, "unsupported_media_type", "Use application/json or multipart/form-data")
 
-        max_images = (2 if fields.get("model") == "bfs-face-swap" else
+        max_images = (2 if fields.get("model") in ("bfs-face-swap-t6", "bfs-face-swap-q2") else
                       8 if fields.get("model") == "h3-my-v5" else 4)
-        if fields.get("model") == "bfs-face-swap" and len(sources) != 2:
+        if fields.get("model") in ("bfs-face-swap-t6", "bfs-face-swap-q2") and len(sources) != 2:
             err(400, "invalid_image_count", "BFS face swap requires exactly 2 images in order: reference_face, target_image")
         if not 1 <= len(sources) <= max_images:
             err(400, "invalid_image_count", f"1-{max_images} images required (file upload or public HTTPS URLs)")
