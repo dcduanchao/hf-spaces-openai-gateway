@@ -62,9 +62,11 @@ class MossImageTests(unittest.TestCase):
 
     def test_upstream_predict_image_first_result_and_token(self):
         image_bytes = b"fake-png"
-        with patch("gateway.moss_image.Client") as client, \\
-             patch("gateway.moss_image.predict_logged", return_value=("/tmp/result.png", 91)) as predict, \\
-             patch("gateway.moss_image.result_bytes", return_value=image_bytes) as result_bytes:
+        with (
+            patch("gateway.moss_image.Client") as client,
+            patch("gateway.moss_image.predict_logged", return_value=("/tmp/result.png", 91)) as predict,
+            patch("gateway.moss_image.result_bytes", return_value=image_bytes) as result_bytes,
+        ):
             output = run(self.profile, self.request, "hf_USER_TOKEN")
         self.assertEqual(output, image_bytes)
         self.assertEqual(client.call_args.kwargs["token"], "hf_USER_TOKEN")
@@ -74,8 +76,10 @@ class MossImageTests(unittest.TestCase):
         client.return_value.close.assert_called_once()
 
     def test_result_contract_rejects_mismatch(self):
-        with patch("gateway.moss_image.Client"), \\
-             patch("gateway.moss_image.predict_logged", return_value=("/tmp/result.png",)):
+        with (
+            patch("gateway.moss_image.Client"),
+            patch("gateway.moss_image.predict_logged", return_value=("/tmp/result.png",)),
+        ):
             with self.assertRaises(ValueError):
                 run(self.profile, self.request, None)
 
