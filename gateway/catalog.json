@@ -124,6 +124,47 @@
       "result_path": [
         0
       ]
+    },
+    {
+      "id": "qwen-image-2.1-2",
+      "display_name": "Qwen Image 2.1 · 2 Steps",
+      "adapter": "qwen_realtime",
+      "space_id": "linoyts/qwen-image-2-1-realtime",
+      "api_name": "/generate",
+      "enabled": true,
+      "description": "Qwen Image 2.1 · 固定 2 步 DMD2 LoRA；分辨率档位 512 / 1024 / 1536，支持 1:1、4:3、3:4、3:2、2:3、16:9、9:16；文生图和最多 4 张参考图编辑；不使用实时 GPU 会话或提示词增强。页面尺寸为档位/比例映射参考值，最终实际像素以上游输出为准。",
+      "modes": [
+        "generations",
+        "edits"
+      ],
+      "default_size": "1024x1024",
+      "allowed_sizes": [
+        "512x512",
+        "600x448",
+        "448x600",
+        "632x424",
+        "424x632",
+        "688x384",
+        "384x688",
+        "1024x1024",
+        "1200x896",
+        "896x1200",
+        "1264x848",
+        "848x1264",
+        "1376x768",
+        "768x1376",
+        "1536x1536",
+        "1800x1344",
+        "1344x1800",
+        "1896x1272",
+        "1272x1896",
+        "2064x1152",
+        "1152x2064"
+      ],
+      "bindings": {},
+      "fixed": {},
+      "extras": {},
+      "result_path": []
     }
   ]
 }
