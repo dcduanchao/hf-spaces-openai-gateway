@@ -30,7 +30,7 @@ from .upstream_auth import token_tail
 STANDARD_RATIOS = ("1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16")
 QWEN_2_STEPS_MODEL = "qwen-image-2.1-2"
 MINIMAX_H3_MODEL = "h3-my-v5"
-FACE_SWAP_MODEL = "bfs-face-swap"
+FACE_SWAP_MODELS = ("bfs-face-swap-t6", "bfs-face-swap-q2")
 
 
 def SIZE_LABEL(size: str) -> str:
@@ -324,25 +324,26 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, random_seed
     return images, f"已通过 OpenAI API 生成 {len(images)} 张图片\n耗时 {time.monotonic() - started:.1f} 秒"
 
 
-def generate_face_swap(reference_face, target_image, base_model, token):
+def generate_face_swap(reference_face, target_image, model_id, token):
     """Two-image simplified flow; same loopback API/history as other edits."""
-    from .bfs_face_swap import BASE_MODELS, DEFAULT_PROMPT
+    from .bfs_face_swap import MODEL_BASE, DEFAULT_PROMPT
     if not reference_face or not target_image:
         raise gr.Error("请分别上传参考人脸图和目标身体/场景图")
-    if base_model not in BASE_MODELS:
-        raise gr.Error("请选择有效的基础模型")
+    if model_id not in FACE_SWAP_MODELS:
+        raise gr.Error("请选择 BFS 的 Turbo 或 Qwen 模型")
+    base_model = MODEL_BASE[model_id]
     hf_token = (token or "").strip() or None
     if hf_token and not re.fullmatch(r"hf_[A-Za-z0-9_]+", hf_token):
         raise gr.Error("HF Token 格式不正确")
     payload = {
-        "model": FACE_SWAP_MODEL,
+        "model": model_id,
         "prompt": DEFAULT_PROMPT,
         "size": "1024x1024",
         "n": 1,
         "seed": -1,
-        "extra_body": {"base_model": base_model},
+        "extra_body": {},
     }
-    logger.info("[hf-auth] source=studio model=%s hf_token=%s", FACE_SWAP_MODEL, token_tail(hf_token))
+    logger.info("[hf-auth] source=studio model=%s hf_token=%s", model_id, token_tail(hf_token))
     started = time.monotonic()
     try:
         images = api_generate(payload, hf_token,
@@ -420,13 +421,10 @@ def create_ui():
                         placeholder="例如 1024x1536；宽高各 256～4096，最多 16777216 像素")
                 space_link = gr.HTML(value=model_space_link(current))
                 with gr.Column(visible=False) as face_panel:
-                    gr.Markdown("### 👤 面部交换\\n仅需两张图和一个基础模型。请确保获得照片中人物的许可。")
+                    gr.Markdown("### 👤 面部交换\\n上传两张图，基础模型由上方模型 ID 自动选择。请确保获得照片中人物的许可。")
                     with gr.Row():
                         face_reference = gr.Image(type="filepath", label="① 参考人脸（换成这个人的头部）", sources=["upload"])
                         face_target = gr.Image(type="filepath", label="② 目标身体/场景（保留背景与姿势）", sources=["upload"])
-                    face_base_model = gr.Radio(
-                        ["Turbo · Viggle 6-step", "Base · Qwen-Image-2.1"],
-                        value="Turbo · Viggle 6-step", label="基础模型")
                     face_run = gr.Button("开始面部交换", variant="primary")
                 with gr.Row():
                     count = gr.Slider(1, 4, value=1, step=1, label="生成数量")
@@ -453,7 +451,7 @@ def create_ui():
             lambda enabled: gr.update(interactive=not enabled, value=-1 if enabled else 0),
             inputs=[random_seed], outputs=[seed], api_visibility="private")
         def toggle_face_mode(model_id):
-            face = model_id == FACE_SWAP_MODEL
+            face = model_id in FACE_SWAP_MODELS
             return tuple(gr.update(visible=visible) for visible in (
                 face, not face, not face, not face, not face, not face,
                 not face, not face, not face, not face, not face, not face,
@@ -464,7 +462,7 @@ def create_ui():
                      count, seed, random_seed, extra_panel, run, pose_panel],
             api_visibility="private")
         face_run.click(generate_face_swap,
-            inputs=[face_reference, face_target, face_base_model, token],
+            inputs=[face_reference, face_target, model, token],
             outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
         model.change(selected_model, inputs=[model],
             outputs=[size, model_info, space_link, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
