@@ -239,6 +239,65 @@
       "result_path": [
         0
       ]
+    },
+    {
+      "id": "moss-image-nsfw",
+      "display_name": "MOSS Image · NSFW Multi-LoRA",
+      "adapter": "moss_image_nsfw",
+      "space_id": "jmendelblatt/moss-image-nsfw-lora",
+      "api_name": "/generate",
+      "enabled": true,
+      "description": "MOSS Image SFT Multi-LoRA (Uncensored + Realistic Snapshot)。文生图，支持负面提示词、步数、CFG、两组 LoRA 强度和触发词设置。",
+      "modes": [
+        "generations"
+      ],
+      "default_size": "1024x1024",
+      "allowed_sizes": [
+        "512x512",
+        "768x768",
+        "1024x1024",
+        "768x1024",
+        "1024x768",
+        "512x768",
+        "768x512"
+      ],
+      "bindings": {},
+      "fixed": {},
+      "extras": {
+        "negative_prompt": {
+          "target": "negative_prompt",
+          "kind": "str",
+          "default": "blurry, low quality, distorted, bad anatomy, deformed fingers, extra limbs, CGI, render, 3d, cartoon, airbrushed, plastic skin, oversaturated, watermark"
+        },
+        "steps": {
+          "target": "steps",
+          "kind": "float",
+          "default": 30
+        },
+        "guidance_scale": {
+          "target": "guidance_scale",
+          "kind": "float",
+          "default": 3
+        },
+        "lora_scale": {
+          "target": "lora_scale",
+          "kind": "float",
+          "default": 0.7
+        },
+        "realistic_scale": {
+          "target": "realistic_scale",
+          "kind": "float",
+          "default": 1
+        },
+        "add_trigger": {
+          "target": "add_trigger",
+          "kind": "bool",
+          "default": true
+        }
+      },
+      "result_path": [
+        0
+      ]
     }
   ]
 }
