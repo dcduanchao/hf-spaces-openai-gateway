@@ -99,19 +99,14 @@ def run(profile, payload, token, image_paths=None, ip_token=None):
     except ValueError as exc:
         logger.error("[hf-upstream] bfs_failure phase=client_init type=%s", type(exc).__name__)
         raise RuntimeError("BFS 上游 Gradio Client 初始化失败") from None
-    phase = "mode_change"
+    phase = "prepare"
     try:
-        # Only Turbo's 6-step default is confirmed by the upstream label.
-        # For Base, query /on_mode_change rather than guessing its steps.
-        if base_model == TURBO:
-            steps = 6.0
-        else:
-            steps = client.predict(base_model=base_model, api_name="/on_mode_change")
-            if isinstance(steps, (tuple, list)):
-                if len(steps) != 1:
-                    raise RuntimeError("BFS 上游步数接口返回异常")
-                steps = steps[0]
-        phase = "prepare"
+        # The Turbo model uses six steps; the Base model uses the native
+        # Qwen-Image-2.1 30-step default. Do not call /on_mode_change here:
+        # Gradio may return a component-update payload instead of a number,
+        # which previously caused the Base request to fail before inference.
+        steps = 6.0 if base_model == TURBO else 30.0
+        logger.info("[hf-upstream] bfs_parameters mode=%s steps=%s", "turbo" if base_model == TURBO else "base", steps)
         kwargs = build_kwargs(profile, payload, paths, steps)
         phase = "face_swap"
         response = predict_logged(client, space_id=profile.space_id,
