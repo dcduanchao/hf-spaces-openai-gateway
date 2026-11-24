@@ -117,7 +117,7 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None, ip
         err(400, "unsupported_format", "Supported response_format values: url, b64_json")
     try:
         # The 2-step model's upstream API supports the literal Auto aspect ratio.
-        if not (p.id in ("qwen-image-2.1-2", "minimax-h3-mysticxxx-v5") and payload.get("size") == "auto"):
+        if not (p.id in ("qwen-image-2.1-2", "minimax-h3-mysticxxx-v5") and (payload.get("size") or p.default_size) == "auto"):
             parse_size(payload.get("size") or p.default_size, p)
     except ValueError as ex:
         err(400, "invalid_parameters", str(ex))
