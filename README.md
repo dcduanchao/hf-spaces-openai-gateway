@@ -69,7 +69,7 @@ OpenAI 标准 Images API 请求不要求提供 `seed` 字段，网关继续兼�
 
 `/face_swap` 的 9 个必填参数：`reference_face` 和 `target_image`（两个 FileData 图片）、`base_model`（精确枚举）、`resolution=1536`（整数；上游实际 Gradio 运行校验为数值选项 `1024`、`1536`、`2048`，与自动生成的 API 文档中字符串类型不一致）、`num_inference_steps`、`lora_scale=1.0`、`seed=0.0`、`randomize_seed=true`、`prompt`（上游文档提供的 head_swap 固定提示词）。不同基础模型的默认 `num_inference_steps` 通过上游 `/on_mode_change(base_model)` 查询，避免猜测 Base 模式步数。随机 Seed 默认启用；API 请求如有需要也可通过可选非标准 `seed` 扩展提供固定 Seed。
 
-上游返回 `[(before_filepath, after_filepath), used_seed]`。网关将 **after** 图片作为 OpenAI Images API 结果，并保留历史记录；不会错误使用 Before 原图。两张输入按 `[reference_face, target_image]` 顺序传递。API 也严格拒绝少于或多于两张参考图；其他模型的图片数量限制保持不变。
+上游返回 `[(before_filepath, after_filepath), used_seed]`。网关将 **Before 和 After 两张图片按顺序**放入 OpenAI Images API 的 `data` 数组，网页图库分别标为“Before · 原图”“After · 换脸结果”，并将两张图片均存入历史记录。两张输入按 `[reference_face, target_image]` 顺序传递。API 也严格拒绝少于或多于两张参考图；其他模型的图片数量限制保持不变。
 
 ```bash
 curl -X POST "https://duan0320-hf-spaces-openai-gateway.hf.space/v1/images/edits" \\
