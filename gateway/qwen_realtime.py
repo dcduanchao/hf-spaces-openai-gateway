@@ -55,7 +55,17 @@ def choose_parameters(width: int, height: int) -> tuple[str, str]:
 
 
 def build_kwargs(profile, payload, image_paths=None):
-    width, height = parse_size(payload.get("size") or profile.default_size, profile)
+    requested_size = payload.get("size") or profile.default_size
+    if requested_size == "auto":
+        resolution, aspect_ratio = "1536", "Auto"
+    else:
+        width, height = parse_size(requested_size, profile)
+        if requested_size in {f"{w}x{h}" for w, h in BASE_SIZES.values()}:
+            ratio = next(k for k, (w, h) in BASE_SIZES.items()
+                         if requested_size == f"{w}x{h}")
+            resolution, aspect_ratio = "1536", ratio
+        else:
+            resolution, aspect_ratio = choose_parameters(width, height)
     paths = image_paths or []
     if len(paths) > MAX_REFERENCES:
         raise ValueError("Qwen Image 2.1 2-step 网关最多支持 4 张参考图")
@@ -81,7 +91,6 @@ def build_kwargs(profile, payload, image_paths=None):
         raise ValueError("seed 只能是 -1 或 0～2147483647")
     seed = secrets.randbelow(MAX_SEED + 1) if raw_seed == -1 else raw_seed
 
-    resolution, aspect_ratio = choose_parameters(width, height)
     return {
         "prompt": payload["prompt"],
         "input_images": [{"image": handle_file(path), "caption": None} for path in paths],
