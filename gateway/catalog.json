@@ -165,6 +165,47 @@
       "fixed": {},
       "extras": {},
       "result_path": []
+    },
+    {
+      "id": "moss-image-8",
+      "display_name": "MOSS Image · 8-Step DMD",
+      "adapter": "moss_image",
+      "space_id": "hugging-apps/moss-image-8-step-dmd",
+      "api_name": "/generate",
+      "enabled": true,
+      "description": "MOSS Image 8-Step DMD · 文生图；Gradio /generate 使用 prompt、height、width、num_steps、seed、randomize_seed、lora_strength。默认 8 步、LoRA 强度 0.7；支持自定义尺寸。",
+      "modes": [
+        "generations"
+      ],
+      "default_size": "1024x1024",
+      "allowed_sizes": [
+        "512x512",
+        "768x768",
+        "1024x1024",
+        "768x1024",
+        "1024x768",
+        "512x768",
+        "768x512",
+        "1024x1536",
+        "1536x1024"
+      ],
+      "bindings": {},
+      "fixed": {},
+      "extras": {
+        "steps": {
+          "target": "num_steps",
+          "kind": "float",
+          "default": 8
+        },
+        "lora_strength": {
+          "target": "lora_strength",
+          "kind": "float",
+          "default": 0.7
+        }
+      },
+      "result_path": [
+        0
+      ]
     }
   ]
 }
