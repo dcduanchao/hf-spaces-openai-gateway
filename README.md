@@ -61,6 +61,28 @@ Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 Ope
 
 OpenAI 标准 Images API 请求不要求提供 `seed` 字段，网关继续兼容省略该字段：省略时内部默认 `-1`（随机）。现有网关同时保留可选的非标准 `seed` 扩展，以兼容固定 Seed 的旧调用方；不应把 `seed` 描述成 OpenAI 官方标准参数。
 
+## BFS Best Face Swap（`bfs-face-swap`）
+
+上游：[hugging-apps/bfs-best-face-swap](https://huggingface.co/spaces/hugging-apps/bfs-best-face-swap)。这是**专用双图面部交换**，仅支持 `POST /v1/images/edits`，不提供文生图。请仅在取得图片中人物许可的情况下使用。
+
+网页工作室选择 `bfs-face-swap` 后，会显示简化界面：**① 参考人脸**（要替换进去的头部）、**② 目标身体/场景**（保留背景和姿势），然后仅从 **Turbo · Viggle 6-step**（默认）与 **Base · Qwen-Image-2.1** 中选择一个，点击“开始面部交换”。其他参数不需要用户填写；HF Token 可沿用现有输入框。
+
+`/face_swap` 的 9 个必填参数：`reference_face` 和 `target_image`（两个 FileData 图片）、`base_model`（精确枚举）、`resolution="1536"`、`num_inference_steps`、`lora_scale=1.0`、`seed=0.0`、`randomize_seed=true`、`prompt`（上游文档提供的 head_swap 固定提示词）。不同基础模型的默认 `num_inference_steps` 通过上游 `/on_mode_change(base_model)` 查询，避免猜测 Base 模式步数。随机 Seed 默认启用；API 请求如有需要也可通过可选非标准 `seed` 扩展提供固定 Seed。
+
+上游返回 `[(before_filepath, after_filepath), used_seed]`。网关将 **after** 图片作为 OpenAI Images API 结果，并保留历史记录；不会错误使用 Before 原图。两张输入按 `[reference_face, target_image]` 顺序传递。API 也严格拒绝少于或多于两张参考图；其他模型的图片数量限制保持不变。
+
+```bash
+curl -X POST "https://duan0320-hf-spaces-openai-gateway.hf.space/v1/images/edits" \\
+  -H "X-HF-Token: hf_YOUR_TOKEN" \\
+  -F "model=bfs-face-swap" \\
+  -F "prompt=head_swap" \\
+  -F 'extra_body={"base_model":"Turbo · Viggle 6-step"}' \\
+  -F "image=@reference_face.png" \\
+  -F "image=@target_body.png"
+```
+
+接口接入以提供的 Gradio API 文档为依据；实际第三方 ZeroGPU 推理结果需要上线后验证。
+
 ## MiniMax H3 Image MysticXXX V5（`h3-my-v5`）
 
 上游：[baka999/MiniMax-H3-Image-MysticXXX-V5](https://huggingface.co/spaces/baka999/MiniMax-H3-Image-MysticXXX-V5)。通过 Gradio `/generate` 调用，支持文生图和最多 8 张参考图片的编辑；提示词可以使用 `<Picture 1>`、`<Picture 2>` 等引用输入图（按照上传顺序）。图库确认功能仍按原先最多 4 张的规则，直接手工上传可使用本模型的 8 张上限。其他模型继续最多 4 张。
