@@ -1,5 +1,6 @@
 """Single-process bounded video worker with persistent task records."""
 import json
+import logging
 import re
 import secrets
 import shutil
@@ -7,7 +8,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore, Lock
 from . import history
-from .wan2_2_i2v_v3 import run
+from .wan2_2_i2v_v3 import run, VideoUpstreamError
+
+logger = logging.getLogger("uvicorn.error")
 
 POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="video")
 SLOTS = BoundedSemaphore(4)
@@ -41,8 +44,12 @@ def worker(path, record, payload, token, ip_token, paths):
         (path / "output.mp4").write_bytes(raw)
         record.update(status="completed", progress=100, completed_at=int(time.time()), seed=seed)
         write(path, record)
-    except Exception:
-        record.update(status="failed", error={"code": "upstream_failed", "message": "Video generation failed; check upstream status and quota."})
+    except Exception as exc:
+        phase = exc.phase if isinstance(exc, VideoUpstreamError) else "worker"
+        code = exc.code if isinstance(exc, VideoUpstreamError) else "video_worker_failed"
+        message = exc.public_message if isinstance(exc, VideoUpstreamError) else "Video worker failed; check storage and service logs."
+        logger.error("[video-task] id=%s phase=%s code=%s error_type=%s", record["id"], phase, code, type(exc).__name__)
+        record.update(status="failed", error={"code": code, "message": message, "phase": phase})
         write(path, record)
     finally:
         with LOCK:

@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import math
+import logging
 from pathlib import Path
 from gradio_client import Client, handle_file
 from .upstream_auth import client_kwargs
+
+logger = logging.getLogger("uvicorn.error")
 
 MODEL_ID = "wan2.2-i2v-v3"
 SPACE_ID = "duan0320/wan2-2-i2v-v3"
@@ -80,18 +83,68 @@ def unpack_result(result):
         raise RuntimeError("invalid Wan seed")
     return file, int(seed)
 
+class VideoUpstreamError(RuntimeError):
+    def __init__(self, phase, exc):
+        self.phase = phase
+        # Only fixed, public diagnostic messages. Never return or log raw
+        # exception text (may contain credentials, prompt or signed URLs).
+        message = str(exc).lower()
+        if any(word in message for word in ("quota", "zerogpu runs", "gpu seconds", "rate limit", "429")):
+            self.code = "upstream_quota_exceeded"
+            self.public_message = "ZeroGPU quota or rate limit reached; check HF Token and remaining quota."
+        elif isinstance(exc, TimeoutError):
+            self.code = "upstream_timeout"
+            self.public_message = "Upstream video job timed out."
+        elif "frame_multiplier" in message or ("16" in message and "choice" in message):
+            self.code = "upstream_fps_invalid"
+            self.public_message = "Upstream rejected the FPS parameter; check Dropdown value type."
+        elif "last_image" in message or ("nonetype" in message and "image" in message):
+            self.code = "upstream_last_image_invalid"
+            self.public_message = "Upstream rejected the optional last image."
+        elif "401" in message or "403" in message or "unauthorized" in message:
+            self.code = "upstream_auth_failed"
+            self.public_message = "Upstream access denied; verify HF Token and Space permissions."
+        else:
+            self.code = {"client_init": "upstream_client_failed", "submit": "upstream_submit_failed",
+                         "wait": "upstream_inference_failed", "result": "upstream_result_invalid",
+                         "prepare": "upstream_input_failed"}.get(phase, "upstream_failed")
+            self.public_message = "Video generation failed at " + phase + " (" + type(exc).__name__ + ")."
+        super().__init__(self.public_message)
+
 def run(payload, token, image_paths, ip_token=None, timeout=900):
     """Return MP4 bytes and actual seed; intended for a background worker."""
-    kwargs = build_kwargs(payload, image_paths)
-    client = Client(SPACE_ID, **client_kwargs(token, ip_token))
+    phase = "prepare"
+    client = None
     try:
+        kwargs = build_kwargs(payload, image_paths)
+        logger.info("[hf-video] space=%s endpoint=%s images=%d fps=%s fps_type=%s seconds=%s steps=%s",
+                    SPACE_ID, API_NAME, len(image_paths), kwargs["frame_multiplier"],
+                    type(kwargs["frame_multiplier"]).__name__, kwargs["duration_seconds"], kwargs["steps"])
+        phase = "client_init"
+        client = Client(SPACE_ID, **client_kwargs(token, ip_token))
+        phase = "submit"
         job = client.submit(api_name=API_NAME, **kwargs)
+        phase = "wait"
         try:
             result = job.result(timeout=timeout)
         except TimeoutError:
-            job.cancel()
+            try:
+                job.cancel()
+            except Exception:
+                pass
             raise
+        phase = "result"
+        logger.info("[hf-video] result_type=%s item_types=%s", type(result).__name__,
+                    [type(item).__name__ for item in result] if isinstance(result, (tuple, list)) else [])
         path, seed = unpack_result(result)
         return path.read_bytes(), seed
+    except Exception as exc:
+        error = VideoUpstreamError(phase, exc)
+        logger.error("[hf-video] phase=%s code=%s error_type=%s", phase, error.code, type(exc).__name__)
+        raise error from None
     finally:
-        client.close()
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                logger.warning("[hf-video] client close failed")
