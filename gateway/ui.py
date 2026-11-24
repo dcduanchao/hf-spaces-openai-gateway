@@ -4,6 +4,7 @@ No GPU model is loaded by this application: every job is sent to an upstream HF 
 from __future__ import annotations
 import io
 import json
+from html import escape
 import logging
 import re
 import os
@@ -120,12 +121,26 @@ def profiles():
 def choices():
     return [(f"{p.id} · {p.space_id}", p.id) for p in profiles().values()]
 
+def model_space_link(profile) -> str:
+    """Render a link to the selected upstream Space in a new browser tab."""
+    if profile is None:
+        return ""
+    space_id = escape(profile.space_id, quote=True)
+    url = f"https://huggingface.co/spaces/{space_id}"
+    return (
+        '<div class="model-space-link">'
+        f'上游 Space：<a href="{url}" target="_blank" rel="noopener noreferrer">'
+        f'{space_id} ↗</a></div>'
+    )
+
+
 def selected_model(model_id):
     p = profiles().get(model_id)
     if not p:
         return (
             gr.update(choices=[], value=None),
             gr.update(value="当前模型未配置或已禁用"),
+            gr.update(value=""),
             gr.update(value="文生图"),
             gr.update(visible=False),
             gr.update(visible=False),
@@ -142,6 +157,7 @@ def selected_model(model_id):
     return (
         gr.update(choices=sizes, value=default_size_value(p)),
         gr.update(value=note),
+        gr.update(value=model_space_link(p)),
         gr.update(value="文生图"),
         gr.update(visible=False),
         gr.update(visible=False),
@@ -337,6 +353,7 @@ def create_ui():
                     custom_dimensions = gr.Textbox(
                         label="自定义尺寸（可选，优先于下拉尺寸）",
                         placeholder="例如 1024x1536；宽高各 256～4096，最多 16777216 像素")
+                space_link = gr.HTML(value=model_space_link(current))
                 with gr.Row():
                     count = gr.Slider(1, 4, value=1, step=1, label="生成数量")
                     seed = gr.Number(-1, precision=0, label="Seed（-1 随机）")
@@ -358,7 +375,7 @@ def create_ui():
                     show_label=True, preview=True)
                 info = gr.Textbox(label="执行信息", lines=3)
         model.change(selected_model, inputs=[model],
-            outputs=[size, model_info, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
+            outputs=[size, model_info, space_link, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
         mode.change(update_mode, inputs=[mode, model],
             outputs=[upload_panel, edit_warning, pose_panel], api_visibility="private").then(
                 reference_preview_for_mode, inputs=[mode, model, reference_kind, confirmed_files],
@@ -431,6 +448,6 @@ def create_ui():
             outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
         if default_id:
             demo.load(selected_model, inputs=[model],
-                outputs=[size, model_info, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
+                outputs=[size, model_info, space_link, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
     demo.queue(default_concurrency_limit=2)
     return demo
