@@ -298,6 +298,92 @@
       "result_path": [
         0
       ]
+    },
+    {
+      "id": "minimax-h3-mysticxxx-v5",
+      "display_name": "MiniMax H3 Image · MysticXXX V5",
+      "adapter": "minimax_h3",
+      "space_id": "baka999/MiniMax-H3-Image-MysticXXX-V5",
+      "api_name": "/generate",
+      "enabled": true,
+      "description": "MiniMax H3 Image MysticXXX V5；文生图或最多 8 张参考图编辑。支持 Auto 和 10 种宽高比，默认 4 MP，prompt enhance 仅在上游配置时可用。参考尺寸仅用于选择宽高比，不保证输出精确像素。",
+      "modes": [
+        "generations",
+        "edits"
+      ],
+      "default_size": "auto",
+      "allowed_sizes": [
+        "1024x1024",
+        "1280x1024",
+        "1024x768",
+        "1152x768",
+        "1280x720",
+        "1344x576",
+        "1024x1280",
+        "768x1024",
+        "768x1152",
+        "720x1280"
+      ],
+      "bindings": {},
+      "fixed": {},
+      "extras": {
+        "aspect": {
+          "target": "aspect",
+          "kind": "str",
+          "default": "auto",
+          "choices": [
+            "auto",
+            "1:1",
+            "5:4",
+            "4:3",
+            "3:2",
+            "16:9",
+            "21:9",
+            "4:5",
+            "3:4",
+            "2:3",
+            "9:16"
+          ]
+        },
+        "resolution": {
+          "target": "resolution",
+          "kind": "str",
+          "default": "4 MP"
+        },
+        "enhance": {
+          "target": "enhance",
+          "kind": "bool",
+          "default": false
+        },
+        "reasoning_effort": {
+          "target": "reasoning_effort",
+          "kind": "str",
+          "default": "low"
+        },
+        "lora_scale": {
+          "target": "lora_scale",
+          "kind": "float",
+          "default": 0.6
+        },
+        "lora_attn_scale": {
+          "target": "lora_attn_scale",
+          "kind": "float",
+          "default": 0.5
+        },
+        "lora_mlp_scale": {
+          "target": "lora_mlp_scale",
+          "kind": "float",
+          "default": 0.9
+        },
+        "lora_early_scale": {
+          "target": "lora_early_scale",
+          "kind": "float",
+          "default": 0.4
+        }
+      },
+      "result_path": [
+        0
+      ]
     }
   ]
 }
