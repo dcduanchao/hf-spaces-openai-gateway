@@ -122,6 +122,9 @@ def result_bytes(value, profile: Profile) -> bytes:
 
 
 def invoke(profile: Profile, payload: dict, token: str | None, image_paths=None, ip_token=None) -> bytes:
+    if profile.adapter == "bfs_face_swap":
+        from .bfs_face_swap import run
+        return run(profile, payload, token, image_paths, ip_token=ip_token)
     if profile.adapter == "minimax_h3":
         from .minimax_h3 import run
         return run(profile, payload, token, image_paths, ip_token=ip_token)
