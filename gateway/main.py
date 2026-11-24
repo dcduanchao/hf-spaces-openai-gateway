@@ -377,6 +377,9 @@ async def edit(request: Request, authorization: str | None = Header(default=None
         return await asyncio.to_thread(produce, body.model_dump(), token, "edits", paths,
                                        request.headers.get("x-ip-token"))
 
+from .video_api import router as video_router
+app.include_router(video_router)
+
 # Serve Gradio studio on / while preserving the FastAPI image endpoints.
 import gradio as gr
 from .ui import create_ui, CSS
