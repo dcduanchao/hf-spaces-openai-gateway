@@ -10,7 +10,7 @@ from .upstream_auth import client_kwargs
 logger = logging.getLogger("uvicorn.error")
 
 MODEL_ID = "wan2.2-i2v-v3"
-SPACE_ID = "duan0320/wan2-2-i2v-v3"
+SPACE_ID = "JCisHERE/wan2-2-i2v-v3"
 API_NAME = "/generate_video"
 SCHEDULERS = ("FlowMatchEulerDiscrete", "SASolver", "DEISMultistep",
               "DPMSolverMultistepInverse", "UniPCMultistep",

@@ -83,7 +83,7 @@ def poll_video(video_id):
     return result, video if video is not None else gr.skip(), gr.update(active=not terminal), gr.update(interactive=terminal)
 
 def create_video_tab():
-    gr.Markdown("## 图生视频 · Wan 2.2 I2V V3\n上游：[duan0320/wan2-2-i2v-v3](https://huggingface.co/spaces/duan0320/wan2-2-i2v-v3)；分辨率由起始图片自动决定。")
+    gr.Markdown("## 图生视频 · Wan 2.2 I2V V3\n上游：[JCisHERE/wan2-2-i2v-v3](https://huggingface.co/spaces/JCisHERE/wan2-2-i2v-v3)；分辨率由起始图片自动决定。")
     with gr.Row():
         with gr.Column():
             first = gr.Image(type="filepath", label="起始图片（必填）", sources=["upload"])

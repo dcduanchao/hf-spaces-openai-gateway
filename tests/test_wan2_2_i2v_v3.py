@@ -5,6 +5,9 @@ from unittest.mock import patch
 from gateway.wan2_2_i2v_v3 import build_kwargs, run, unpack_result, SPACE_ID, API_NAME
 
 class WanVideoTests(unittest.TestCase):
+    def test_upstream_space_id(self):
+        self.assertEqual(SPACE_ID, "JCisHERE/wan2-2-i2v-v3")
+
     def test_one_and_two_images(self):
         with patch("gateway.wan2_2_i2v_v3.handle_file", side_effect=lambda p: p):
             one = build_kwargs({"prompt": "Wind in trees"}, ["a.png"])
