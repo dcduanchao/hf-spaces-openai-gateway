@@ -1,7 +1,11 @@
 """BFS Best Face Swap: two-image head swap using its Gradio /face_swap API."""
 from __future__ import annotations
 
+import logging
+
 from gradio_client import Client, handle_file
+
+logger = logging.getLogger("uvicorn.error")
 
 from .adapter import result_bytes, select_result
 from .upstream_auth import client_kwargs
@@ -75,18 +79,36 @@ def run(profile, payload, token, image_paths=None, ip_token=None):
         raise ValueError("无效的面部交换基础模型")
     if len(paths) != 2:
         raise ValueError("面部交换需要恰好两张图片")
-    client = Client(profile.space_id, **client_kwargs(token, ip_token))
+    # Keep local validation separate from Gradio Client validation so that
+    # upstream ValueErrors are not incorrectly reported as HTTP 400.
     try:
-        # /on_mode_change is the authoritative source for mode-dependent
-        # inference steps, avoiding an invented default for the Base model.
-        steps = client.predict(base_model=base_model, api_name="/on_mode_change")
-        if isinstance(steps, (tuple, list)):
-            if len(steps) != 1:
-                raise RuntimeError("BFS 上游步数接口返回异常")
-            steps = steps[0]
+        client = Client(profile.space_id, **client_kwargs(token, ip_token))
+    except ValueError as exc:
+        logger.error("[hf-upstream] bfs_failure phase=client_init type=%s", type(exc).__name__)
+        raise RuntimeError("BFS 上游 Gradio Client 初始化失败") from None
+    phase = "mode_change"
+    try:
+        # Only Turbo's 6-step default is confirmed by the upstream label.
+        # For Base, query /on_mode_change rather than guessing its steps.
+        if base_model == TURBO:
+            steps = 6.0
+        else:
+            steps = client.predict(base_model=base_model, api_name="/on_mode_change")
+            if isinstance(steps, (tuple, list)):
+                if len(steps) != 1:
+                    raise RuntimeError("BFS 上游步数接口返回异常")
+                steps = steps[0]
+        phase = "prepare"
         kwargs = build_kwargs(profile, payload, paths, steps)
+        phase = "face_swap"
         response = predict_logged(client, space_id=profile.space_id,
                                   api_name=profile.api_name, kwargs=kwargs)
+        phase = "result"
         return result_bytes(image_after(response), profile)
+    except ValueError as exc:
+        # Gradio endpoint validation, remote errors and response file handling
+        # should never be categorized as malformed local user parameters.
+        logger.error("[hf-upstream] bfs_failure phase=%s type=%s", phase, type(exc).__name__)
+        raise RuntimeError(f"BFS 上游调用失败（阶段：{phase}）") from None
     finally:
         client.close()
