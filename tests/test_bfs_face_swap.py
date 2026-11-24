@@ -88,11 +88,42 @@ class BfsFaceSwapTests(unittest.TestCase):
         ):
             client.return_value.predict.return_value = 6.0
             self.assertEqual(run(self.profile, self.payload, "hf_USER", self.paths), b"image")
-        client.return_value.predict.assert_called_once_with(
-            base_model=TURBO, api_name="/on_mode_change")
+        client.return_value.predict.assert_not_called()
         self.assertEqual(predict.call_args.kwargs["api_name"], "/face_swap")
+        self.assertEqual(predict.call_args.kwargs["kwargs"]["num_inference_steps"], 6.0)
         output.assert_called_once_with("/tmp/after.png", self.profile)
         client.return_value.close.assert_called_once()
+
+    def test_base_model_queries_upstream_mode_change(self):
+        request = {**self.payload, "extra_body": {"base_model": BASE}}
+        with (
+            patch("gateway.bfs_face_swap.Client") as client,
+            patch("gateway.bfs_face_swap.handle_file", side_effect=lambda p: p),
+            patch("gateway.bfs_face_swap.predict_logged",
+                  return_value=(("/tmp/before.png", "/tmp/after.png"), 10.0)) as predict,
+            patch("gateway.bfs_face_swap.result_bytes", return_value=b"image"),
+        ):
+            client.return_value.predict.return_value = 28.0
+            self.assertEqual(run(self.profile, request, None, self.paths), b"image")
+        client.return_value.predict.assert_called_once_with(
+            base_model=BASE, api_name="/on_mode_change")
+        self.assertEqual(predict.call_args.kwargs["kwargs"]["num_inference_steps"], 28.0)
+
+    def test_upstream_gradio_valueerror_is_not_bad_client_parameters(self):
+        with patch("gateway.bfs_face_swap.Client") as client:
+            client.return_value.predict.side_effect = ValueError("remote gradio validation")
+            request = {**self.payload, "extra_body": {"base_model": BASE}}
+            with self.assertRaisesRegex(RuntimeError, "mode_change"):
+                run(self.profile, request, None, self.paths)
+            client.return_value.close.assert_called_once()
+        with (
+            patch("gateway.bfs_face_swap.Client"),
+            patch("gateway.bfs_face_swap.handle_file", side_effect=lambda p: p),
+            patch("gateway.bfs_face_swap.predict_logged",
+                  side_effect=ValueError("remote gradio failure")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "face_swap"):
+                run(self.profile, self.payload, None, self.paths)
 
     def test_api_requires_exactly_two_images(self):
         with tempfile.TemporaryDirectory() as root_dir:
