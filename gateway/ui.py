@@ -26,7 +26,36 @@ from .reference_confirmation import preview_candidate, confirm_reference, clear_
 from .recipe_prompt import build_edit_prompt, STYLES
 from .upstream_auth import token_tail
 
-SIZE_LABEL = lambda s: s.replace("x", " × ")
+def SIZE_LABEL(size: str) -> str:
+    """Display only: keep each original API size value unchanged."""
+    from math import gcd
+    try:
+        width, height = (int(x) for x in size.lower().split("x"))
+        common = gcd(width, height)
+        return f"{width}×{height}（{width // common}:{height // common}）"
+    except (ValueError, ZeroDivisionError):
+        return size
+
+
+def size_note(profile) -> str:
+    """Summarize the current model's preset dimensions without hiding any."""
+    dims = []
+    for value in profile.allowed_sizes:
+        try:
+            width, height = (int(x) for x in value.lower().split("x"))
+            dims.append((width, height))
+        except ValueError:
+            continue
+    if not dims:
+        return ""
+    smallest = min(w * h for w, h in dims)
+    largest = max(w * h for w, h in dims)
+    return (f"**尺寸：** 共 {len(dims)} 种预设，像素面积 "
+            f"{smallest:,}～{largest:,}；"
+            "选项中保留原始尺寸，括号内为精确宽高比。")
+
+
+
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -84,7 +113,8 @@ def selected_model(model_id):
         f"**模型：** {p.id}  \\n"
         f"**上游：** [HF Space](https://huggingface.co/spaces/{p.space_id})  \\n"
         f"**支持：** {'文生图、图片编辑' if 'edits' in p.modes else '仅文生图'}  \\n"
-        f"{p.description or '由第三方 Hugging Face Space 提供推理。'}"
+        f"{p.description or '由第三方 Hugging Face Space 提供推理。'}  \\n"
+        f"{size_note(p)}"
     )
     return (
         gr.update(choices=sizes, value=p.default_size),
