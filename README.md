@@ -39,6 +39,20 @@ pinned: false
 
 Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 OpenAI HTTP API（`127.0.0.1:7860`），网页不再直接创建上游 ZeroGPU Client。网页填写的 HF Token 通过 `X-HF-Token` 逐请求传给 API，后续身份和上游推理处理与 Postman/API 调用一致。文生图走 `/v1/images/generations`，确认选入上传框的多图编辑走 `/v1/images/edits`，图片顺序不变。API 统一负责历史记录与参考图/生成图的 Bucket 保存，不会因 UI 和 API 双重记录。
 
+## Qwen Image 2.1 · 2 Steps
+
+新模型公开 ID：`qwen-image-2.1-2`，对应上游 [linoyts/qwen-image-2-1-realtime](https://huggingface.co/spaces/linoyts/qwen-image-2-1-realtime)，单次生成/编辑使用 `/generate`，不启动 `/realtime_session`，也不使用 `/prepare` 提示词增强。模型固定使用两步 DMD2 LoRA，不提供推理步数自定义参数。
+
+上游提供 `resolution` 三个档位 `512`、`1024`、`1536`；`aspect_ratio` 包括 `1:1`、`4:3`、`3:4`、`3:2`、`2:3`、`16:9` 和 `9:16`。网页为每种组合提供一个由上游基准尺寸推导的 `widthxheight` 参考选项（共 21 项）；OpenAI API 的 `size` 会映射到相应档位和比例，最终实际输出像素由上游决定。参考图片遵循现有网关最多 4 张的限制，HF Token、Base64/Data URL、HTTPS 参考图与私有 Bucket 历史走原有统一管线。
+
+网页中**所有模型尺寸**统一显示为 `宽×高（约分后的宽高比）`，只改变显示标签，不修改原来三个模型已有的尺寸值或生成参数。例如 `1344x768` 显示 `1344×768（7:4）`。
+
+示例请求：
+
+```json
+{"model":"qwen-image-2.1-2","prompt":"A cat in sunshine","size":"1024x1024","n":1}
+```
+
 ## Viggle Turbo 对外模型 ID
 
 Viggle Turbo v0.3 的公开模型 ID 为 `qwen-image-2.1-6`（原 ID `qwen-image-2.1-viggle-turbo` 已替换）。`GET /v1/models`、`GET /v1/models/detail` 和网页工作室统一显示新 ID；文生图及编辑请求均使用 `"model": "qwen-image-2.1-6"`。上游仍是 `Viggle/Qwen-Image-2.1-viggle-turbo` 的 `/generate` 接口，默认 6 步、固定 v0.3。原有 Qwen Image 2.1 与 Z-Image-Turbo 均不变。
