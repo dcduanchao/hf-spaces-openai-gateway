@@ -67,7 +67,7 @@ OpenAI 标准 Images API 请求不要求提供 `seed` 字段，网关继续兼�
 
 网页工作室选择 `bfs-face-swap` 后，会显示简化界面：**① 参考人脸**（要替换进去的头部）、**② 目标身体/场景**（保留背景和姿势），然后仅从 **Turbo · Viggle 6-step**（默认）与 **Base · Qwen-Image-2.1** 中选择一个，点击“开始面部交换”。其他参数不需要用户填写；HF Token 可沿用现有输入框。
 
-`/face_swap` 的 9 个必填参数：`reference_face` 和 `target_image`（两个 FileData 图片）、`base_model`（精确枚举）、`resolution=1536`（整数；上游实际 Gradio 运行校验为数值选项 `1024`、`1536`、`2048`，与自动生成的 API 文档中字符串类型不一致）、`num_inference_steps`、`lora_scale=1.0`、`seed=0.0`、`randomize_seed=true`、`prompt`（上游文档提供的 head_swap 固定提示词）。不同基础模型的默认 `num_inference_steps` 通过上游 `/on_mode_change(base_model)` 查询，避免猜测 Base 模式步数。随机 Seed 默认启用；API 请求如有需要也可通过可选非标准 `seed` 扩展提供固定 Seed。
+`/face_swap` 的 9 个必填参数：`reference_face` 和 `target_image`（两个 FileData 图片）、`base_model`（精确枚举）、`resolution=1536`（整数；上游实际 Gradio 运行校验为数值选项 `1024`、`1536`、`2048`，与自动生成的 API 文档中字符串类型不一致）、`num_inference_steps`、`lora_scale=1.0`、`seed=0.0`、`randomize_seed=true`、`prompt`（上游文档提供的 head_swap 固定提示词）。推理步数默认使用 Turbo 6 步、Base 30 步（不再提前调用 `/on_mode_change`，避免其组件更新格式导致 Base 模式在准备阶段失败）。随机 Seed 默认启用；API 请求如有需要也可通过可选非标准 `seed` 扩展提供固定 Seed。
 
 上游返回 `[(before_filepath, after_filepath), used_seed]`。网关将 **Before 和 After 两张图片按顺序**放入 OpenAI Images API 的 `data` 数组，网页图库分别标为“Before · 原图”“After · 换脸结果”，并将两张图片均存入历史记录。两张输入按 `[reference_face, target_image]` 顺序传递。API 也严格拒绝少于或多于两张参考图；其他模型的图片数量限制保持不变。
 
