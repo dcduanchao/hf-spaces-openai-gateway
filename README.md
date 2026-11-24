@@ -55,6 +55,12 @@ pinned: false
 
 Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 OpenAI HTTP API（`127.0.0.1:7860`），网页不再直接创建上游 ZeroGPU Client。网页填写的 HF Token 通过 `X-HF-Token` 逐请求传给 API，后续身份和上游推理处理与 Postman/API 调用一致。文生图走 `/v1/images/generations`，确认选入上传框的多图编辑走 `/v1/images/edits`，图片顺序不变。API 统一负责历史记录与参考图/生成图的 Bucket 保存，不会因 UI 和 API 双重记录。
 
+## 网页工作室的随机 Seed 与 OpenAI 图片接口
+
+网页工作室现在单独提供 **“随机 Seed”** 复选框，默认勾选；此时 Seed 显示为 `-1` 且不可编辑，提交时发送网关随机哨兵 `seed=-1`。取消勾选后 Seed 输入框启用、初始为 `0`，必须填写非负整数。再次勾选时恢复 `-1`。
+
+OpenAI 标准 Images API 请求不要求提供 `seed` 字段，网关继续兼容省略该字段：省略时内部默认 `-1`（随机）。现有网关同时保留可选的非标准 `seed` 扩展，以兼容固定 Seed 的旧调用方；不应把 `seed` 描述成 OpenAI 官方标准参数。
+
 ## MOSS Image NSFW Multi-LoRA（`moss-image-nsfw`）
 
 上游：[jmendelblatt/moss-image-nsfw-lora](https://huggingface.co/spaces/jmendelblatt/moss-image-nsfw-lora)，API 名 `/generate`。本模型为支持 Uncensored 和 Realistic Snapshot 两组 LoRA 的第三方 Space；网关仅转发调用，不在本地加载模型。
