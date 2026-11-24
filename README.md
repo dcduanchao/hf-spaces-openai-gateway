@@ -61,7 +61,7 @@ Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 Ope
 
 OpenAI 标准 Images API 请求不要求提供 `seed` 字段，网关继续兼容省略该字段：省略时内部默认 `-1`（随机）。现有网关同时保留可选的非标准 `seed` 扩展，以兼容固定 Seed 的旧调用方；不应把 `seed` 描述成 OpenAI 官方标准参数。
 
-## MiniMax H3 Image MysticXXX V5（`minimax-h3-mysticxxx-v5`）
+## MiniMax H3 Image MysticXXX V5（`h3-my-v5`）
 
 上游：[baka999/MiniMax-H3-Image-MysticXXX-V5](https://huggingface.co/spaces/baka999/MiniMax-H3-Image-MysticXXX-V5)。通过 Gradio `/generate` 调用，支持文生图和最多 8 张参考图片的编辑；提示词可以使用 `<Picture 1>`、`<Picture 2>` 等引用输入图（按照上传顺序）。图库确认功能仍按原先最多 4 张的规则，直接手工上传可使用本模型的 8 张上限。其他模型继续最多 4 张。
 
@@ -86,7 +86,7 @@ OpenAI 标准 Images API 请求不要求提供 `seed` 字段，网关继续兼�
 
 ```json
 {
-  "model": "minimax-h3-mysticxxx-v5",
+  "model": "h3-my-v5",
   "prompt": "A cinematic portrait",
   "size": "auto",
   "seed": -1,
