@@ -93,7 +93,7 @@ class StudioApiTransportTests(unittest.TestCase):
         with patch.object(ui, "api_generate", return_value=[png()]) as transport:
             with patch.object(ui.history, "new_record", side_effect=AssertionError("duplicate history")):
                 images, text = ui.generate("文生图", "z-image-turbo", "cat", [],
-                    "1024x1024", 1, -1, "hf_PRO123", "{}", "")
+                    "1024x1024", 1, -1, True, "hf_PRO123", "{}", "")
         self.assertEqual(len(images), 1)
         self.assertIn("OpenAI API", text)
         self.assertEqual(transport.call_args.args[1], "hf_PRO123")
