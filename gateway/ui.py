@@ -380,179 +380,184 @@ def create_ui():
     default_id = opts[0][1] if opts else None
     current = profiles().get(default_id)
     sizes = model_size_choices(current) if current else []
-    with gr.Blocks(title="AI 图片工作室") as demo:
-        gr.Markdown("# 🎨 AI 图片工作室\n文生图 · 图片编辑 · 第三方 Hugging Face Spaces", elem_id="studio-hero")
-        with gr.Row():
-            with gr.Column(scale=5):
-                mode = gr.Radio(["文生图", "图片编辑"], value="文生图", label="生成模式")
-                with gr.Column(visible=False) as upload_panel:
-                    source = gr.File(file_count="multiple", type="filepath", file_types=["image"],
-                        label="上传图片 / 已确认图库参考图（其他模型最多 4 张；MiniMax H3 最多 8 张）")
-                    upload_preview = gr.Gallery(label="已加入编辑的图片预览（包括手动上传与图库确认）",
-                        columns=4, height=180, preview=True)
-                edit_warning = gr.Markdown("", visible=True)
-                with gr.Accordion("🧑 人像 · 👗 服装 · 🧍 姿势参考图库", open=False, visible=False) as pose_panel:
-                    gr.Markdown(
-                        "来自 [AI Pose Gallery 中文版](https://github.com/anhao/ai-pose-gallery-zh) "
-                        "（原作者及素材权利归各自权利人）。"
-                        "**素材不属于源代码 MIT 协议，原图库含非商业使用限制。** "
-                        "此处只显示普通参考类别，不批量镜像素材。"
+    with gr.Blocks(title="AI 图片与视频工作室") as demo:
+        gr.Markdown("# 🎨 AI 图片与视频工作室\n文生图 · 图片编辑 · 图生视频 · 第三方 Hugging Face Spaces", elem_id="studio-hero")
+        with gr.Tabs():
+            with gr.Tab("图片生成"):
+                with gr.Row():
+                    with gr.Column(scale=5):
+                        mode = gr.Radio(["文生图", "图片编辑"], value="文生图", label="生成模式")
+                        with gr.Column(visible=False) as upload_panel:
+                            source = gr.File(file_count="multiple", type="filepath", file_types=["image"],
+                                label="上传图片 / 已确认图库参考图（其他模型最多 4 张；MiniMax H3 最多 8 张）")
+                            upload_preview = gr.Gallery(label="已加入编辑的图片预览（包括手动上传与图库确认）",
+                                columns=4, height=180, preview=True)
+                        edit_warning = gr.Markdown("", visible=True)
+                        with gr.Accordion("🧑 人像 · 👗 服装 · 🧍 姿势参考图库", open=False, visible=False) as pose_panel:
+                            gr.Markdown(
+                                "来自 [AI Pose Gallery 中文版](https://github.com/anhao/ai-pose-gallery-zh) "
+                                "（原作者及素材权利归各自权利人）。"
+                                "**素材不属于源代码 MIT 协议，原图库含非商业使用限制。** "
+                                "此处只显示普通参考类别，不批量镜像素材。"
+                            )
+                            reference_kind = gr.Radio(["人像", "服装", "姿势"], value="人像", label="图库类型")
+                            with gr.Row():
+                                pose_keyword = gr.Textbox(label="关键词筛选（可选）", placeholder="如：短发、白色连衣裙、站姿", scale=3)
+                                pose_category = gr.Dropdown(["全部"], value="全部", label="分类", scale=2)
+                            pose_search = gr.Button("筛选预览图", size="sm")
+                            pose_reset = gr.Button("恢复默认预览", size="sm")
+                            pose_preview = gr.Gallery(label="点击仅预览（不会自动添加）", columns=4, height=300, preview=False)
+                            pose_results = gr.State([])
+                            candidate = gr.State(None)
+                            confirmed_files = gr.State([])
+                            candidate_image = gr.Image(label="当前预览（未添加）", interactive=False, height=220)
+                            pose_hint = gr.Markdown("点击图库图片仅预览；点击「确认添加到上传图片」后才会作为编辑素材。最多 4 张。")
+                            confirm_button = gr.Button("确认添加到上传图片", variant="primary", size="sm")
+                            pose_clear = gr.Button("清除已确认的图库图片", size="sm")
+                        with gr.Row():
+                            prompt_style = gr.Dropdown(choices=list(STYLES), value="写实人像写真",
+                                label="画风预设（图片编辑）", visible=False)
+                            reset_prompt = gr.Button("重置组合提示词", visible=False, size="sm")
+                        prompt = gr.Textbox(label="提示词（Prompt）", lines=8, max_lines=16,
+                            placeholder="文生图：输入画面描述；图片编辑：确认添加参考图后自动生成，可继续修改……")
+                        automatic_prompt = gr.State(True)
+                        copy_prompt = gr.Button("复制提示词", size="sm")
+                        with gr.Row():
+                            model = gr.Dropdown(choices=opts, value=default_id,
+                                label="当前可用模型", interactive=True, allow_custom_value=True)
+                            size = gr.Dropdown(choices=sizes,
+                                value=default_size_value(current) if current else None, label="尺寸")
+                            custom_dimensions = gr.Textbox(
+                                label="自定义尺寸（可选，优先于下拉尺寸）",
+                                placeholder="例如 1024x1536；宽高各 256～4096，最多 16777216 像素")
+                        space_link = gr.HTML(value=model_space_link(current))
+                        with gr.Column(visible=False) as face_panel:
+                            gr.Markdown("### 👤 面部交换\\n上传两张图，基础模型由上方模型 ID 自动选择。请确保获得照片中人物的许可。")
+                            with gr.Row():
+                                face_reference = gr.Image(type="filepath", label="① 参考人脸（换成这个人的头部）", sources=["upload"])
+                                face_target = gr.Image(type="filepath", label="② 目标身体/场景（保留背景与姿势）", sources=["upload"])
+                            face_run = gr.Button("开始面部交换", variant="primary")
+                        with gr.Row():
+                            count = gr.Slider(1, 4, value=1, step=1, label="生成数量")
+                            seed = gr.Number(-1, precision=0, label="Seed（随机时为 -1）", interactive=False)
+                            random_seed = gr.Checkbox(value=True, label="随机 Seed")
+                        with gr.Accordion("Hugging Face Token（无痕模式和 API 均可使用）", open=True):
+                            token = gr.Textbox(type="password", label="HF Token",
+                                placeholder="hf_...（无痕模式请在此填写，关闭窗口后不会自动保留）")
+                            quota_button = gr.Button("验证 Token / 查询 ZeroGPU 可用时长", size="sm")
+                            quota_status = gr.Markdown("输入 HF Token 后点击查询，可查看剩余额度及下次重置时间。")
+                            quota_button.click(token_quota_info, inputs=[token], outputs=[quota_status], api_visibility="private", concurrency_limit=2)
+                            gr.Markdown("**无痕浏览器不会继承 Hugging Face 登录状态。** 输入个人 HF Token 后点击验证，再生成图片，使用该账号的 ZeroGPU 额度。API 请在每次请求头中携带 `X-HF-Token: hf_...` 或 `Authorization: Bearer hf_...`。Token 不保存到历史记录、浏览器存储或日志；有效 Token 也受账号运行次数和额度限制。")
+                        with gr.Accordion("模型专属参数 · JSON", open=False) as extra_panel:
+                            extra = gr.Code(value="{}", language="json", label="extra_body（由不同 Space 解释）", lines=6)
+                            gr.Markdown("例如 `{\"negative_prompt\": \"blurry\"}`，实际可用参数由该 Space 的接口决定。")
+                        model_info = gr.Markdown()
+                        refresh = gr.Button("刷新模型列表", size="sm")
+                        run = gr.Button("开始生成", variant="primary", interactive=bool(opts))
+                    with gr.Column(scale=5):
+                        gallery = gr.Gallery(label="结果", columns=2, height=500,
+                            show_label=True, preview=True)
+                        info = gr.Textbox(label="执行信息", lines=3)
+                random_seed.change(
+                    lambda enabled: gr.update(interactive=not enabled, value=-1 if enabled else 0),
+                    inputs=[random_seed], outputs=[seed], api_visibility="private")
+                def toggle_face_mode(model_id):
+                    face = current_studio_model(model_id) in FACE_SWAP_MODELS
+                    return tuple(gr.update(visible=visible) for visible in (
+                        face, not face, not face, not face, not face, not face,
+                        not face, not face, not face, not face, not face, not face,
+                    ))
+
+                # A pre-deploy browser tab can still hold the removed BFS ID. The
+                # dropdown accepts stale values during preprocessing and reselects t6.
+                demo.load(
+                    lambda selected: gr.update(value=current_studio_model(selected))
+                    if selected == LEGACY_FACE_SWAP_MODEL else gr.skip(),
+                    inputs=[model], outputs=[model], api_visibility="private")
+                model.change(toggle_face_mode, inputs=[model],
+                    outputs=[face_panel, mode, prompt, copy_prompt, size, custom_dimensions,
+                             count, seed, random_seed, extra_panel, run, pose_panel],
+                    api_visibility="private")
+                face_run.click(generate_face_swap,
+                    inputs=[face_reference, face_target, model, token],
+                    outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
+                model.change(selected_model, inputs=[model],
+                    outputs=[size, model_info, space_link, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
+                mode.change(update_mode, inputs=[mode, model],
+                    outputs=[upload_panel, edit_warning, pose_panel], api_visibility="private").then(
+                        reference_preview_for_mode, inputs=[mode, model, reference_kind, confirmed_files],
+                        outputs=[pose_category, pose_preview, pose_results, pose_hint],
+                        api_visibility="private")
+                mode.change(lambda editing: (gr.update(visible=editing == "图片编辑"),
+                                             gr.update(visible=editing == "图片编辑")),
+                    inputs=[mode], outputs=[prompt_style, reset_prompt], api_visibility="private")
+                reference_kind.change(default_reference_preview, inputs=[reference_kind, confirmed_files],
+                    outputs=[pose_category, pose_preview, pose_results, pose_hint], api_visibility="private")
+
+                def lookup_references(kind, keyword, category, selected):
+                    try:
+                        found = search_references(kind, keyword, category)
+                    except Exception:
+                        raise gr.Error("图库暂时无法访问，请稍后再试。") from None
+                    return gallery_items(found), found, (
+                        f"{kind} · 展示 {len(found)} 张。点击图片仅预览，点击确认才会加入上传框。"
                     )
-                    reference_kind = gr.Radio(["人像", "服装", "姿势"], value="人像", label="图库类型")
-                    with gr.Row():
-                        pose_keyword = gr.Textbox(label="关键词筛选（可选）", placeholder="如：短发、白色连衣裙、站姿", scale=3)
-                        pose_category = gr.Dropdown(["全部"], value="全部", label="分类", scale=2)
-                    pose_search = gr.Button("筛选预览图", size="sm")
-                    pose_reset = gr.Button("恢复默认预览", size="sm")
-                    pose_preview = gr.Gallery(label="点击仅预览（不会自动添加）", columns=4, height=300, preview=False)
-                    pose_results = gr.State([])
-                    candidate = gr.State(None)
-                    confirmed_files = gr.State([])
-                    candidate_image = gr.Image(label="当前预览（未添加）", interactive=False, height=220)
-                    pose_hint = gr.Markdown("点击图库图片仅预览；点击「确认添加到上传图片」后才会作为编辑素材。最多 4 张。")
-                    confirm_button = gr.Button("确认添加到上传图片", variant="primary", size="sm")
-                    pose_clear = gr.Button("清除已确认的图库图片", size="sm")
-                with gr.Row():
-                    prompt_style = gr.Dropdown(choices=list(STYLES), value="写实人像写真",
-                        label="画风预设（图片编辑）", visible=False)
-                    reset_prompt = gr.Button("重置组合提示词", visible=False, size="sm")
-                prompt = gr.Textbox(label="提示词（Prompt）", lines=8, max_lines=16,
-                    placeholder="文生图：输入画面描述；图片编辑：确认添加参考图后自动生成，可继续修改……")
-                automatic_prompt = gr.State(True)
-                copy_prompt = gr.Button("复制提示词", size="sm")
-                with gr.Row():
-                    model = gr.Dropdown(choices=opts, value=default_id,
-                        label="当前可用模型", interactive=True, allow_custom_value=True)
-                    size = gr.Dropdown(choices=sizes,
-                        value=default_size_value(current) if current else None, label="尺寸")
-                    custom_dimensions = gr.Textbox(
-                        label="自定义尺寸（可选，优先于下拉尺寸）",
-                        placeholder="例如 1024x1536；宽高各 256～4096，最多 16777216 像素")
-                space_link = gr.HTML(value=model_space_link(current))
-                with gr.Column(visible=False) as face_panel:
-                    gr.Markdown("### 👤 面部交换\\n上传两张图，基础模型由上方模型 ID 自动选择。请确保获得照片中人物的许可。")
-                    with gr.Row():
-                        face_reference = gr.Image(type="filepath", label="① 参考人脸（换成这个人的头部）", sources=["upload"])
-                        face_target = gr.Image(type="filepath", label="② 目标身体/场景（保留背景与姿势）", sources=["upload"])
-                    face_run = gr.Button("开始面部交换", variant="primary")
-                with gr.Row():
-                    count = gr.Slider(1, 4, value=1, step=1, label="生成数量")
-                    seed = gr.Number(-1, precision=0, label="Seed（随机时为 -1）", interactive=False)
-                    random_seed = gr.Checkbox(value=True, label="随机 Seed")
-                with gr.Accordion("Hugging Face Token（无痕模式和 API 均可使用）", open=True):
-                    token = gr.Textbox(type="password", label="HF Token",
-                        placeholder="hf_...（无痕模式请在此填写，关闭窗口后不会自动保留）")
-                    quota_button = gr.Button("验证 Token / 查询 ZeroGPU 可用时长", size="sm")
-                    quota_status = gr.Markdown("输入 HF Token 后点击查询，可查看剩余额度及下次重置时间。")
-                    quota_button.click(token_quota_info, inputs=[token], outputs=[quota_status], api_visibility="private", concurrency_limit=2)
-                    gr.Markdown("**无痕浏览器不会继承 Hugging Face 登录状态。** 输入个人 HF Token 后点击验证，再生成图片，使用该账号的 ZeroGPU 额度。API 请在每次请求头中携带 `X-HF-Token: hf_...` 或 `Authorization: Bearer hf_...`。Token 不保存到历史记录、浏览器存储或日志；有效 Token 也受账号运行次数和额度限制。")
-                with gr.Accordion("模型专属参数 · JSON", open=False) as extra_panel:
-                    extra = gr.Code(value="{}", language="json", label="extra_body（由不同 Space 解释）", lines=6)
-                    gr.Markdown("例如 `{\"negative_prompt\": \"blurry\"}`，实际可用参数由该 Space 的接口决定。")
-                model_info = gr.Markdown()
-                refresh = gr.Button("刷新模型列表", size="sm")
-                run = gr.Button("开始生成", variant="primary", interactive=bool(opts))
-            with gr.Column(scale=5):
-                gallery = gr.Gallery(label="结果", columns=2, height=500,
-                    show_label=True, preview=True)
-                info = gr.Textbox(label="执行信息", lines=3)
-        random_seed.change(
-            lambda enabled: gr.update(interactive=not enabled, value=-1 if enabled else 0),
-            inputs=[random_seed], outputs=[seed], api_visibility="private")
-        def toggle_face_mode(model_id):
-            face = current_studio_model(model_id) in FACE_SWAP_MODELS
-            return tuple(gr.update(visible=visible) for visible in (
-                face, not face, not face, not face, not face, not face,
-                not face, not face, not face, not face, not face, not face,
-            ))
 
-        # A pre-deploy browser tab can still hold the removed BFS ID. The
-        # dropdown accepts stale values during preprocessing and reselects t6.
-        demo.load(
-            lambda selected: gr.update(value=current_studio_model(selected))
-            if selected == LEGACY_FACE_SWAP_MODEL else gr.skip(),
-            inputs=[model], outputs=[model], api_visibility="private")
-        model.change(toggle_face_mode, inputs=[model],
-            outputs=[face_panel, mode, prompt, copy_prompt, size, custom_dimensions,
-                     count, seed, random_seed, extra_panel, run, pose_panel],
-            api_visibility="private")
-        face_run.click(generate_face_swap,
-            inputs=[face_reference, face_target, model, token],
-            outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
-        model.change(selected_model, inputs=[model],
-            outputs=[size, model_info, space_link, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
-        mode.change(update_mode, inputs=[mode, model],
-            outputs=[upload_panel, edit_warning, pose_panel], api_visibility="private").then(
-                reference_preview_for_mode, inputs=[mode, model, reference_kind, confirmed_files],
-                outputs=[pose_category, pose_preview, pose_results, pose_hint],
-                api_visibility="private")
-        mode.change(lambda editing: (gr.update(visible=editing == "图片编辑"),
-                                     gr.update(visible=editing == "图片编辑")),
-            inputs=[mode], outputs=[prompt_style, reset_prompt], api_visibility="private")
-        reference_kind.change(default_reference_preview, inputs=[reference_kind, confirmed_files],
-            outputs=[pose_category, pose_preview, pose_results, pose_hint], api_visibility="private")
+                pose_search.click(lookup_references,
+                    inputs=[reference_kind, pose_keyword, pose_category, confirmed_files],
+                    outputs=[pose_preview, pose_results, pose_hint], api_visibility="private")
+                pose_reset.click(reset_reference_preview,
+                    inputs=[reference_kind, confirmed_files],
+                    outputs=[pose_keyword, pose_category, pose_preview, pose_results, pose_hint],
+                    api_visibility="private")
 
-        def lookup_references(kind, keyword, category, selected):
-            try:
-                found = search_references(kind, keyword, category)
-            except Exception:
-                raise gr.Error("图库暂时无法访问，请稍后再试。") from None
-            return gallery_items(found), found, (
-                f"{kind} · 展示 {len(found)} 张。点击图片仅预览，点击确认才会加入上传框。"
-            )
+                def preview_image(results, evt: gr.SelectData):
+                    return preview_candidate(results or [], evt.index)
 
-        pose_search.click(lookup_references,
-            inputs=[reference_kind, pose_keyword, pose_category, confirmed_files],
-            outputs=[pose_preview, pose_results, pose_hint], api_visibility="private")
-        pose_reset.click(reset_reference_preview,
-            inputs=[reference_kind, confirmed_files],
-            outputs=[pose_keyword, pose_category, pose_preview, pose_results, pose_hint],
-            api_visibility="private")
+                pose_preview.select(preview_image, inputs=[pose_results],
+                    outputs=[candidate, candidate_image, pose_hint], api_visibility="private")
 
-        def preview_image(results, evt: gr.SelectData):
-            return preview_candidate(results or [], evt.index)
+                def confirm_image(item, files, added):
+                    try:
+                        return confirm_reference(item, files, added)
+                    except ValueError as exc:
+                        raise gr.Error(str(exc)) from None
+                    except Exception:
+                        raise gr.Error("参考图下载失败，请检查图库图片是否可公开访问。") from None
 
-        pose_preview.select(preview_image, inputs=[pose_results],
-            outputs=[candidate, candidate_image, pose_hint], api_visibility="private")
+                confirm_button.click(confirm_image, inputs=[candidate, source, confirmed_files],
+                    outputs=[source, confirmed_files, pose_hint], api_visibility="private")
 
-        def confirm_image(item, files, added):
-            try:
-                return confirm_reference(item, files, added)
-            except ValueError as exc:
-                raise gr.Error(str(exc)) from None
-            except Exception:
-                raise gr.Error("参考图下载失败，请检查图库图片是否可公开访问。") from None
-
-        confirm_button.click(confirm_image, inputs=[candidate, source, confirmed_files],
-            outputs=[source, confirmed_files, pose_hint], api_visibility="private")
-
-        pose_clear.click(clear_gallery_files, inputs=[source, confirmed_files],
-            outputs=[source, confirmed_files, pose_hint], api_visibility="private")
-        source.change(preview_uploaded_images, inputs=[source],
-            outputs=[upload_preview], api_visibility="private")
-        source.change(sync_edit_prompt, inputs=[mode, source, confirmed_files, prompt_style, automatic_prompt],
-            outputs=[prompt], api_visibility="private")
-        confirmed_files.change(sync_edit_prompt,
-            inputs=[mode, source, confirmed_files, prompt_style, automatic_prompt],
-            outputs=[prompt], api_visibility="private")
-        prompt_style.change(sync_edit_prompt,
-            inputs=[mode, source, confirmed_files, prompt_style, automatic_prompt],
-            outputs=[prompt], api_visibility="private")
-        prompt.input(lambda value: False, inputs=[prompt], outputs=[automatic_prompt],
-            api_visibility="private")
-        reset_prompt.click(reset_edit_prompt,
-            inputs=[mode, source, confirmed_files, prompt_style],
-            outputs=[prompt, automatic_prompt], api_visibility="private")
-        copy_prompt.click(
-            fn=None, inputs=[prompt], outputs=[],
-            js="(text) => navigator.clipboard.writeText(text)",
-            api_visibility="private")
-        refresh.click(refresh_models, outputs=[model, info], api_visibility="private")
-        run.click(generate,
-            inputs=[mode, model, prompt, source, size, count, seed, random_seed, token, extra, custom_dimensions],
-            outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
-        if default_id:
-            demo.load(selected_model, inputs=[model],
-                outputs=[size, model_info, space_link, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
+                pose_clear.click(clear_gallery_files, inputs=[source, confirmed_files],
+                    outputs=[source, confirmed_files, pose_hint], api_visibility="private")
+                source.change(preview_uploaded_images, inputs=[source],
+                    outputs=[upload_preview], api_visibility="private")
+                source.change(sync_edit_prompt, inputs=[mode, source, confirmed_files, prompt_style, automatic_prompt],
+                    outputs=[prompt], api_visibility="private")
+                confirmed_files.change(sync_edit_prompt,
+                    inputs=[mode, source, confirmed_files, prompt_style, automatic_prompt],
+                    outputs=[prompt], api_visibility="private")
+                prompt_style.change(sync_edit_prompt,
+                    inputs=[mode, source, confirmed_files, prompt_style, automatic_prompt],
+                    outputs=[prompt], api_visibility="private")
+                prompt.input(lambda value: False, inputs=[prompt], outputs=[automatic_prompt],
+                    api_visibility="private")
+                reset_prompt.click(reset_edit_prompt,
+                    inputs=[mode, source, confirmed_files, prompt_style],
+                    outputs=[prompt, automatic_prompt], api_visibility="private")
+                copy_prompt.click(
+                    fn=None, inputs=[prompt], outputs=[],
+                    js="(text) => navigator.clipboard.writeText(text)",
+                    api_visibility="private")
+                refresh.click(refresh_models, outputs=[model, info], api_visibility="private")
+                run.click(generate,
+                    inputs=[mode, model, prompt, source, size, count, seed, random_seed, token, extra, custom_dimensions],
+                    outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
+                if default_id:
+                    demo.load(selected_model, inputs=[model],
+                        outputs=[size, model_info, space_link, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
+            with gr.Tab("视频生成"):
+                from .video_studio import create_video_tab
+                create_video_tab()
     demo.queue(default_concurrency_limit=2)
     return demo
