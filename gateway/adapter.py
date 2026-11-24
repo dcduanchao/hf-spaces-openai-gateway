@@ -125,6 +125,9 @@ def invoke(profile: Profile, payload: dict, token: str | None, image_paths=None,
     if profile.adapter == "qwen_image":
         from .qwen_image import run
         return run(profile, payload, token, image_paths, ip_token=ip_token)
+    if profile.adapter == "qwen_realtime":
+        from .qwen_realtime import run
+        return run(profile, payload, token, image_paths, ip_token=ip_token)
     if profile.adapter == "viggle_turbo":
         from .viggle_turbo import run
         return run(profile, payload, token, image_paths, ip_token=ip_token)
