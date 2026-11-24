@@ -13,7 +13,7 @@ from .upstream_logging import predict_logged
 
 TURBO = "Turbo · Viggle 6-step"
 BASE = "Base · Qwen-Image-2.1"
-BASE_MODELS = (TURBO, BASE)
+MODEL_BASE = {"bfs-face-swap-t6": TURBO, "bfs-face-swap-q2": BASE}
 RESOLUTIONS = (1024, 1536, 2048)
 DEFAULT_PROMPT = (
     "head_swap: start with <image1> as the base image, keeping its lighting, "
@@ -33,11 +33,11 @@ def build_kwargs(profile, payload, image_paths, steps):
     extras = payload.get("extra_body") or {}
     if not isinstance(extras, dict):
         raise ValueError("extra_body 必须是 JSON 对象")
-    if set(extras) - {"base_model"}:
-        raise ValueError("面部交换只允许配置 base_model")
-    base_model = extras.get("base_model", TURBO)
-    if base_model not in BASE_MODELS:
-        raise ValueError("base_model 必须是 Turbo · Viggle 6-step 或 Base · Qwen-Image-2.1")
+    if extras:
+        raise ValueError("BFS 双模型的基础模型由 model ID 固定，不接受 extra_body 参数")
+    base_model = MODEL_BASE.get(profile.id)
+    if base_model is None:
+        raise ValueError("未知的 BFS 模型 ID")
     raw_seed = payload.get("seed", -1)
     if isinstance(raw_seed, bool) or not isinstance(raw_seed, int) or not -1 <= raw_seed <= MAX_SEED:
         raise ValueError("seed 必须是 -1 或 0～2147483647")
@@ -87,9 +87,11 @@ def run(profile, payload, token, image_paths=None, ip_token=None):
     extras = payload.get("extra_body") or {}
     if not isinstance(extras, dict):
         raise ValueError("extra_body 必须是 JSON 对象")
-    base_model = extras.get("base_model", TURBO)
-    if base_model not in BASE_MODELS:
-        raise ValueError("无效的面部交换基础模型")
+    if extras:
+        raise ValueError("BFS 双模型不接受 extra_body 参数，请选择对应模型 ID")
+    base_model = MODEL_BASE.get(profile.id)
+    if base_model is None:
+        raise ValueError("未知的 BFS 模型 ID")
     if len(paths) != 2:
         raise ValueError("面部交换需要恰好两张图片")
     # Keep local validation separate from Gradio Client validation so that
