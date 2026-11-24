@@ -31,6 +31,13 @@ STANDARD_RATIOS = ("1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16")
 QWEN_2_STEPS_MODEL = "qwen-image-2.1-2"
 MINIMAX_H3_MODEL = "h3-my-v5"
 FACE_SWAP_MODELS = ("bfs-face-swap-t6", "bfs-face-swap-q2")
+LEGACY_FACE_SWAP_MODEL = "bfs-face-swap"
+
+
+def current_studio_model(model_id):
+    """Migrate stale Gradio browser sessions without restoring the old API ID."""
+    return FACE_SWAP_MODELS[0] if model_id == LEGACY_FACE_SWAP_MODEL else model_id
+
 
 
 def SIZE_LABEL(size: str) -> str:
@@ -141,6 +148,7 @@ def model_space_link(profile) -> str:
 
 
 def selected_model(model_id):
+    model_id = current_studio_model(model_id)
     p = profiles().get(model_id)
     if not p:
         return (
@@ -326,6 +334,7 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, random_seed
 
 def generate_face_swap(reference_face, target_image, model_id, token):
     """Two-image simplified flow; same loopback API/history as other edits."""
+    model_id = current_studio_model(model_id)
     from .bfs_face_swap import MODEL_BASE, DEFAULT_PROMPT
     if not reference_face or not target_image:
         raise gr.Error("请分别上传参考人脸图和目标身体/场景图")
@@ -413,7 +422,7 @@ def create_ui():
                 copy_prompt = gr.Button("复制提示词", size="sm")
                 with gr.Row():
                     model = gr.Dropdown(choices=opts, value=default_id,
-                        label="当前可用模型", interactive=True)
+                        label="当前可用模型", interactive=True, allow_custom_value=True)
                     size = gr.Dropdown(choices=sizes,
                         value=default_size_value(current) if current else None, label="尺寸")
                     custom_dimensions = gr.Textbox(
@@ -451,12 +460,18 @@ def create_ui():
             lambda enabled: gr.update(interactive=not enabled, value=-1 if enabled else 0),
             inputs=[random_seed], outputs=[seed], api_visibility="private")
         def toggle_face_mode(model_id):
-            face = model_id in FACE_SWAP_MODELS
+            face = current_studio_model(model_id) in FACE_SWAP_MODELS
             return tuple(gr.update(visible=visible) for visible in (
                 face, not face, not face, not face, not face, not face,
                 not face, not face, not face, not face, not face, not face,
             ))
 
+        # A pre-deploy browser tab can still hold the removed BFS ID. The
+        # dropdown accepts stale values during preprocessing and reselects t6.
+        demo.load(
+            lambda selected: gr.update(value=current_studio_model(selected))
+            if selected == LEGACY_FACE_SWAP_MODEL else gr.skip(),
+            inputs=[model], outputs=[model], api_visibility="private")
         model.change(toggle_face_mode, inputs=[model],
             outputs=[face_panel, mode, prompt, copy_prompt, size, custom_dimensions,
                      count, seed, random_seed, extra_panel, run, pose_panel],
