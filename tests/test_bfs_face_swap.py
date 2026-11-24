@@ -99,7 +99,7 @@ class BfsFaceSwapTests(unittest.TestCase):
                          ["/tmp/before.png", "/tmp/after.png"])
         client.return_value.close.assert_called_once()
 
-    def test_base_model_queries_upstream_mode_change(self):
+    def test_base_model_uses_30_step_default_without_mode_change(self):
         request = {**self.payload, "extra_body": {"base_model": BASE}}
         with (
             patch("gateway.bfs_face_swap.Client") as client,
@@ -108,19 +108,15 @@ class BfsFaceSwapTests(unittest.TestCase):
                   return_value=(("/tmp/before.png", "/tmp/after.png"), 10.0)) as predict,
             patch("gateway.bfs_face_swap.result_bytes", return_value=b"image"),
         ):
-            client.return_value.predict.return_value = 28.0
             self.assertEqual(run(self.profile, request, None, self.paths), [b"image", b"image"])
-        client.return_value.predict.assert_called_once_with(
-            base_model=BASE, api_name="/on_mode_change")
-        self.assertEqual(predict.call_args.kwargs["kwargs"]["num_inference_steps"], 28.0)
+        client.return_value.predict.assert_not_called()
+        self.assertEqual(predict.call_args.kwargs["kwargs"]["base_model"], BASE)
+        self.assertEqual(predict.call_args.kwargs["kwargs"]["num_inference_steps"], 30.0)
 
     def test_upstream_gradio_valueerror_is_not_bad_client_parameters(self):
-        with patch("gateway.bfs_face_swap.Client") as client:
-            client.return_value.predict.side_effect = ValueError("remote gradio validation")
-            request = {**self.payload, "extra_body": {"base_model": BASE}}
-            with self.assertRaisesRegex(RuntimeError, "mode_change"):
-                run(self.profile, request, None, self.paths)
-            client.return_value.close.assert_called_once()
+        with patch("gateway.bfs_face_swap.Client", side_effect=ValueError("bad gradio schema")):
+            with self.assertRaisesRegex(RuntimeError, "初始化失败"):
+                run(self.profile, self.payload, None, self.paths)
         with (
             patch("gateway.bfs_face_swap.Client"),
             patch("gateway.bfs_face_swap.handle_file", side_effect=lambda p: p),
