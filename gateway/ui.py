@@ -30,6 +30,7 @@ from .upstream_auth import token_tail
 STANDARD_RATIOS = ("1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16")
 QWEN_2_STEPS_MODEL = "qwen-image-2.1-2"
 MINIMAX_H3_MODEL = "h3-my-v5"
+FACE_SWAP_MODEL = "bfs-face-swap"
 
 
 def SIZE_LABEL(size: str) -> str:
@@ -323,6 +324,45 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, random_seed
     return images, f"已通过 OpenAI API 生成 {len(images)} 张图片\n耗时 {time.monotonic() - started:.1f} 秒"
 
 
+def generate_face_swap(reference_face, target_image, base_model, token):
+    """Two-image simplified flow; same loopback API/history as other edits."""
+    from .bfs_face_swap import BASE_MODELS, DEFAULT_PROMPT
+    if not reference_face or not target_image:
+        raise gr.Error("请分别上传参考人脸图和目标身体/场景图")
+    if base_model not in BASE_MODELS:
+        raise gr.Error("请选择有效的基础模型")
+    hf_token = (token or "").strip() or None
+    if hf_token and not re.fullmatch(r"hf_[A-Za-z0-9_]+", hf_token):
+        raise gr.Error("HF Token 格式不正确")
+    payload = {
+        "model": FACE_SWAP_MODEL,
+        "prompt": DEFAULT_PROMPT,
+        "size": "1024x1024",
+        "n": 1,
+        "seed": -1,
+        "extra_body": {"base_model": base_model},
+    }
+    logger.info("[hf-auth] source=studio model=%s hf_token=%s", FACE_SWAP_MODEL, token_tail(hf_token))
+    started = time.monotonic()
+    try:
+        images = api_generate(payload, hf_token,
+                              image_paths=[str(reference_face), str(target_image)])
+    except StudioAPIError as exc:
+        logger.error("[studio-api] face_swap failed status=%s code=%s", exc.status, exc.code)
+        if exc.code == "upstream_quota_exceeded":
+            raise gr.Error(zerogpu_limit_error(
+                RuntimeError("ZeroGPU runs limit"), bool(hf_token))) from None
+        raise gr.Error(f"面部交换失败：{exc.code}（HTTP {exc.status}），请查看 Space Logs。") from None
+    previews = []
+    for png in images:
+        try:
+            with Image.open(io.BytesIO(png)) as im:
+                previews.append((im.copy(), "面部交换结果"))
+        except (OSError, ValueError):
+            raise gr.Error("返回的图片无法预览") from None
+    return previews, f"面部交换完成 · {base_model} · 耗时 {time.monotonic() - started:.1f} 秒"
+
+
 def create_ui():
     opts = choices()
     default_id = opts[0][1] if opts else None
@@ -377,6 +417,16 @@ def create_ui():
                         label="自定义尺寸（可选，优先于下拉尺寸）",
                         placeholder="例如 1024x1536；宽高各 256～4096，最多 16777216 像素")
                 space_link = gr.HTML(value=model_space_link(current))
+                with gr.Column(visible=False) as face_panel:
+                    gr.Markdown("### 👤 面部交换
+仅需两张图和一个基础模型。请确保获得照片中人物的许可。")
+                    with gr.Row():
+                        face_reference = gr.Image(type="filepath", label="① 参考人脸（换成这个人的头部）", sources=["upload"])
+                        face_target = gr.Image(type="filepath", label="② 目标身体/场景（保留背景与姿势）", sources=["upload"])
+                    face_base_model = gr.Radio(
+                        ["Turbo · Viggle 6-step", "Base · Qwen-Image-2.1"],
+                        value="Turbo · Viggle 6-step", label="基础模型")
+                    face_run = gr.Button("开始面部交换", variant="primary")
                 with gr.Row():
                     count = gr.Slider(1, 4, value=1, step=1, label="生成数量")
                     seed = gr.Number(-1, precision=0, label="Seed（随机时为 -1）", interactive=False)
@@ -388,7 +438,7 @@ def create_ui():
                     quota_status = gr.Markdown("输入 HF Token 后点击查询，可查看剩余额度及下次重置时间。")
                     quota_button.click(token_quota_info, inputs=[token], outputs=[quota_status], api_visibility="private", concurrency_limit=2)
                     gr.Markdown("**无痕浏览器不会继承 Hugging Face 登录状态。** 输入个人 HF Token 后点击验证，再生成图片，使用该账号的 ZeroGPU 额度。API 请在每次请求头中携带 `X-HF-Token: hf_...` 或 `Authorization: Bearer hf_...`。Token 不保存到历史记录、浏览器存储或日志；有效 Token 也受账号运行次数和额度限制。")
-                with gr.Accordion("模型专属参数 · JSON", open=False):
+                with gr.Accordion("模型专属参数 · JSON", open=False) as extra_panel:
                     extra = gr.Code(value="{}", language="json", label="extra_body（由不同 Space 解释）", lines=6)
                     gr.Markdown("例如 `{\"negative_prompt\": \"blurry\"}`，实际可用参数由该 Space 的接口决定。")
                 model_info = gr.Markdown()
@@ -401,6 +451,20 @@ def create_ui():
         random_seed.change(
             lambda enabled: gr.update(interactive=not enabled, value=-1 if enabled else 0),
             inputs=[random_seed], outputs=[seed], api_visibility="private")
+        def toggle_face_mode(model_id):
+            face = model_id == FACE_SWAP_MODEL
+            return tuple(gr.update(visible=visible) for visible in (
+                face, not face, not face, not face, not face, not face,
+                not face, not face, not face, not face, not face, not face,
+            ))
+
+        model.change(toggle_face_mode, inputs=[model],
+            outputs=[face_panel, mode, prompt, copy_prompt, size, custom_dimensions,
+                     count, seed, random_seed, extra_panel, run, pose_panel],
+            api_visibility="private")
+        face_run.click(generate_face_swap,
+            inputs=[face_reference, face_target, face_base_model, token],
+            outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
         model.change(selected_model, inputs=[model],
             outputs=[size, model_info, space_link, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
         mode.change(update_mode, inputs=[mode, model],
