@@ -12,6 +12,22 @@ pinned: false
 
 独立 Python/FastAPI 网关，将多个**明确配置**的第三方 Hugging Face Gradio Spaces 适配为 OpenAI Images API。**不加载模型，不需要本地 GPU。**
 
+## 项目维护与部署约定（新会话请先阅读）
+
+**本仓库的默认协作流程：直接修改 `main` 主分支，不为常规修改创建功能分支或 Pull Request。** 今后在新的 ChatGPT 对话中继续维护本项目时，也应先阅读本节并遵循同一流程；若用户当次明确要求先审查、单独分支或 PR，则以当次要求为准。
+
+1. 先读取 GitHub 仓库 `dcduanchao/hf-spaces-openai-gateway` 中的相关最新代码、现有测试和 `.github/workflows/deploy-hf-space.yml`，确认本次变更影响。
+2. 在 `main` 分支直接提交需要的代码、文档和回归测试。不要默认创建分支或 PR，也不要仅提供未提交的修改建议。
+3. 工作流 `Deploy to Hugging Face Space`（`.github/workflows/deploy-hf-space.yml`）在 `main` 的符合 `paths` 过滤条件的 push 后自动触发；也支持在 GitHub Actions 页面使用 `workflow_dispatch` 手动运行。**推送是否自动触发以工作流当前配置为准**；若没有触发，需要手动运行工作流。
+4. 部署流程依次验证 GitHub Actions Secret `HF_TOKEN`、安装依赖、运行 `python -m unittest discover -s tests -v`、执行 `python deploy_hf.py duan0320/hf-spaces-openai-gateway`、运行 `python mount_history_bucket.py` 挂载私有历史 Bucket。测试或部署失败时，应查明原因，不可声称部署成功。
+5. 每次修改后检查对应 Actions Run 的状态与日志，向用户提供提交 SHA、Actions 运行链接及实际的成功/失败/运行中状态；仅在成功且线上服务验证后，才宣称功能已上线。
+
+- [GitHub Actions](https://github.com/dcduanchao/hf-spaces-openai-gateway/actions)
+- [Hugging Face Space](https://huggingface.co/spaces/duan0320/hf-spaces-openai-gateway)
+- [在线图片工作室](https://duan0320-hf-spaces-openai-gateway.hf.space/)
+
+**新对话复用提示：** “继续维护 `dcduanchao/hf-spaces-openai-gateway`，请先读取仓库 README 的『项目维护与部署约定』；直接在 `main` 提交修改，按现有 GitHub Actions 流程自动测试和部署，并反馈运行结果。”
+
 ## 当前状态
 
 已接入 `qwen-image-2.1`（文生图、图片编辑）和 `z-image-turbo`（文生图）。模型列表及 API 请求无需网关密钥。生成时可不提供 HF Token（匿名使用上游公开 ZeroGPU），也可由调用者在 `X-HF-Token: hf_...` 请求头中提供自己的 Token。匿名额度不足、上游限流时返回错误，不会使用网关所有者的 HF Token 兜底。
@@ -43,7 +59,7 @@ Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 Ope
 
 新模型公开 ID：`qwen-image-2.1-2`，对应上游 [linoyts/qwen-image-2-1-realtime](https://huggingface.co/spaces/linoyts/qwen-image-2-1-realtime)，单次生成/编辑使用 `/generate`，不启动 `/realtime_session`，也不使用 `/prepare` 提示词增强。模型固定使用两步 DMD2 LoRA，不提供推理步数自定义参数。
 
-上游提供 `resolution` 三个档位 `512`、`1024`、`1536`；`aspect_ratio` 包括 `1:1`、`4:3`、`3:4`、`3:2`、`2:3`、`16:9` 和 `9:16`。网页为每种组合提供一个由上游基准尺寸推导的 `widthxheight` 参考选项（共 21 项）；OpenAI API 的 `size` 会映射到相应档位和比例，最终实际输出像素由上游决定。参考图片遵循现有网关最多 4 张的限制，HF Token、Base64/Data URL、HTTPS 参考图与私有 Bucket 历史走原有统一管线。
+上游提供 `resolution` 三个档位 `512`、`1024`、`1536`；`aspect_ratio` 包括 `1:1`、`4:3`、`3:4`、`3:2`、`2:3`、`16:9` 和 `9:16`。网页尺寸下拉框只显示 `Auto` 与 7 个固定比例参考尺寸（2048×2048、2400×1792、1792×2400、2528×1696、1696×2528、2752×1536、1536×2752）；API 仍保留原有 21 个分辨率档位/比例组合对应的历史尺寸参考值；OpenAI API 的 `size` 会映射到相应档位和比例，最终实际输出像素由上游决定。参考图片遵循现有网关最多 4 张的限制，HF Token、Base64/Data URL、HTTPS 参考图与私有 Bucket 历史走原有统一管线。
 
 网页中**所有模型尺寸**统一显示为 `宽×高（约分后的宽高比）`，只改变显示标签，不修改原来三个模型已有的尺寸值或生成参数。例如 `1344x768` 显示 `1344×768（7:4）`。
 
