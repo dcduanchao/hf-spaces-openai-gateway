@@ -149,12 +149,21 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None, ip
             item = dict(payload)
             if item.get("seed", -1) >= 0:
                 item["seed"] += i
-            png = invoke(p, item, token, image_paths=paths, ip_token=ip_token)
-            history.store_image(record_id, png)
-            if response_format == "url":
-                data.append({"url": public_image_url(save_temp_image(png))})
+            result = invoke(p, item, token, image_paths=paths, ip_token=ip_token)
+            # BFS ImageSlider returns two meaningful images: Before, After.
+            # All other adapters still return exactly one image per invocation.
+            if p.adapter == "bfs_face_swap":
+                if not isinstance(result, (list, tuple)) or len(result) != 2:
+                    raise RuntimeError("BFS adapter must return Before and After images")
+                outputs = result
             else:
-                data.append({"b64_json": base64.b64encode(png).decode("ascii")})
+                outputs = [result]
+            for png in outputs:
+                history.store_image(record_id, png)
+                if response_format == "url":
+                    data.append({"url": public_image_url(save_temp_image(png))})
+                else:
+                    data.append({"b64_json": base64.b64encode(png).decode("ascii")})
     except ValueError as ex:
         history.finish_record(record_id, "failed", round((time.monotonic() - started) * 1000), "invalid_parameters")
         err(400, "invalid_parameters", str(ex))
