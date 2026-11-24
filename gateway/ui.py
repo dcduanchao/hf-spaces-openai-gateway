@@ -231,7 +231,16 @@ def reset_edit_prompt(mode, files, confirmed, style):
     return (generated if generated else gr.skip()), True
 
 
-def generate(mode, model_id, prompt, image_files, size, count, seed, token, extra_json, custom_dimensions="", request: gr.Request = None):
+def resolve_seed(seed, random_seed: bool) -> int:
+    """Web Studio checkbox controls seed; -1 is the gateway's random sentinel."""
+    if random_seed:
+        return -1
+    if seed is None or isinstance(seed, bool) or int(seed) != seed or seed < 0 or seed > 2**32 - 1:
+        raise ValueError("关闭随机 Seed 后，请填写 0～4294967295 的整数 Seed")
+    return int(seed)
+
+
+def generate(mode, model_id, prompt, image_files, size, count, seed, random_seed, token, extra_json, custom_dimensions="", request: gr.Request = None):
     p = profiles().get(model_id)
     if not p:
         raise gr.Error("模型不存在或未启用，请刷新模型列表")
@@ -267,6 +276,10 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
             raise ValueError("JSON 必须是对象")
     except (ValueError, TypeError) as e:
         raise gr.Error(f"模型扩展参数 JSON 错误：{e}") from None
+    try:
+        resolved_seed = resolve_seed(seed, random_seed)
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise gr.Error(str(exc)) from None
     hf_token = (token or "").strip() or None
     if hf_token and not re.fullmatch(r"hf_[A-Za-z0-9_]+", hf_token):
         raise gr.Error("HF Token 格式不正确，请填写 hf_ 开头的个人访问令牌。")
@@ -276,7 +289,7 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
     logger.info("[hf-auth] source=studio model=%s hf_token=%s", model_id, token_tail(hf_token))
     payload = {
         "model": model_id, "prompt": prompt, "size": size,
-        "n": int(count), "seed": int(seed if seed is not None else -1),
+        "n": int(count), "seed": resolved_seed,
         "extra_body": extra,
     }
     started = time.monotonic()
@@ -360,7 +373,8 @@ def create_ui():
                 space_link = gr.HTML(value=model_space_link(current))
                 with gr.Row():
                     count = gr.Slider(1, 4, value=1, step=1, label="生成数量")
-                    seed = gr.Number(-1, precision=0, label="Seed（-1 随机）")
+                    seed = gr.Number(-1, precision=0, label="Seed（随机时为 -1）", interactive=False)
+                    random_seed = gr.Checkbox(value=True, label="随机 Seed")
                 with gr.Accordion("Hugging Face Token（无痕模式和 API 均可使用）", open=True):
                     token = gr.Textbox(type="password", label="HF Token",
                         placeholder="hf_...（无痕模式请在此填写，关闭窗口后不会自动保留）")
@@ -378,6 +392,9 @@ def create_ui():
                 gallery = gr.Gallery(label="结果", columns=2, height=500,
                     show_label=True, preview=True)
                 info = gr.Textbox(label="执行信息", lines=3)
+        random_seed.change(
+            lambda enabled: gr.update(interactive=not enabled, value=-1 if enabled else 0),
+            inputs=[random_seed], outputs=[seed], api_visibility="private")
         model.change(selected_model, inputs=[model],
             outputs=[size, model_info, space_link, mode, upload_panel, edit_warning, pose_panel], api_visibility="private")
         mode.change(update_mode, inputs=[mode, model],
@@ -448,7 +465,7 @@ def create_ui():
             api_visibility="private")
         refresh.click(refresh_models, outputs=[model, info], api_visibility="private")
         run.click(generate,
-            inputs=[mode, model, prompt, source, size, count, seed, token, extra, custom_dimensions],
+            inputs=[mode, model, prompt, source, size, count, seed, random_seed, token, extra, custom_dimensions],
             outputs=[gallery, info], api_visibility="private", concurrency_limit=2)
         if default_id:
             demo.load(selected_model, inputs=[model],
