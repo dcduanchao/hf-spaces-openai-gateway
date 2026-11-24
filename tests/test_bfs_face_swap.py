@@ -15,7 +15,7 @@ from gateway.bfs_face_swap import (
 )
 from gateway.main import app
 from gateway.models import load_profiles
-from gateway.ui import generate_face_swap, model_space_link
+from gateway.ui import generate_face_swap, model_space_link, current_studio_model, choices, selected_model
 
 
 def tiny_png():
@@ -178,6 +178,18 @@ class BfsFaceSwapTests(unittest.TestCase):
                                   for item in result.json()["data"]], [tiny_png(), tiny_png()])
                 record = history.list_records()["items"][0]
                 self.assertEqual(len(history.get_record(record["id"])["images"]), 2)
+
+    def test_stale_browser_model_migrates_without_public_api_alias(self):
+        self.assertEqual(current_studio_model("bfs-face-swap"), "bfs-face-swap-t6")
+        self.assertEqual(current_studio_model("bfs-face-swap-q2"), "bfs-face-swap-q2")
+        self.assertNotIn("bfs-face-swap", [model_id for _, model_id in choices()])
+        info = selected_model("bfs-face-swap")
+        self.assertIn("bfs-face-swap-t6", info[1]["value"])
+        with patch("gateway.ui.api_generate", return_value=[tiny_png(), tiny_png()]) as api:
+            gallery, _ = generate_face_swap(
+                self.paths[0], self.paths[1], "bfs-face-swap", None)
+        self.assertEqual(len(gallery), 2)
+        self.assertEqual(api.call_args.args[0]["model"], "bfs-face-swap-t6")
 
     def test_studio_simple_path_and_order(self):
         with patch("gateway.ui.api_generate", return_value=[tiny_png(), tiny_png()]) as api:
