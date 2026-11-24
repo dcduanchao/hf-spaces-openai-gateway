@@ -354,10 +354,12 @@ def generate_face_swap(reference_face, target_image, base_model, token):
                 RuntimeError("ZeroGPU runs limit"), bool(hf_token))) from None
         raise gr.Error(f"面部交换失败：{exc.code}（HTTP {exc.status}），请查看 Space Logs。") from None
     previews = []
-    for png in images:
+    if len(images) != 2:
+        raise gr.Error("BFS 上游应返回 Before 与 After 两张图片")
+    for index, png in enumerate(images):
         try:
             with Image.open(io.BytesIO(png)) as im:
-                previews.append((im.copy(), "面部交换结果"))
+                previews.append((im.copy(), "Before · 原图" if index == 0 else "After · 换脸结果"))
         except (OSError, ValueError):
             raise gr.Error("返回的图片无法预览") from None
     return previews, f"面部交换完成 · {base_model} · 耗时 {time.monotonic() - started:.1f} 秒"
