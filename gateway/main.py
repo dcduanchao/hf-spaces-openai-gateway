@@ -117,7 +117,7 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None, ip
         err(400, "unsupported_format", "Supported response_format values: url, b64_json")
     try:
         # The 2-step model's upstream API supports the literal Auto aspect ratio.
-        if not (p.id == "qwen-image-2.1-2" and payload.get("size") == "auto"):
+        if not (p.id in ("qwen-image-2.1-2", "minimax-h3-mysticxxx-v5") and payload.get("size") == "auto"):
             parse_size(payload.get("size") or p.default_size, p)
     except ValueError as ex:
         err(400, "invalid_parameters", str(ex))
@@ -228,7 +228,7 @@ def generate(body: GenerateRequest, request: Request, authorization: str | None 
     return produce(body.model_dump(exclude_none=True, exclude_unset=False), token,
                    ip_token=request.headers.get("x-ip-token"))
 
-def _edit_json_images(payload: dict) -> list[tuple[str, str]]:
+def _edit_json_images(payload: dict, max_images: int = 4) -> list[tuple[str, str]]:
     """Accept image/image_urls/images, preserving order and rejecting ambiguous mixes."""
     provided = [key for key in ("image", "images", "image_urls") if key in payload]
     if len(provided) > 1:
@@ -237,8 +237,8 @@ def _edit_json_images(payload: dict) -> list[tuple[str, str]]:
         err(400, "invalid_image_count", "1-4 images required")
     raw = payload[provided[0]]
     values = [raw] if isinstance(raw, (str, dict)) else raw
-    if not isinstance(values, list) or not 1 <= len(values) <= 4:
-        err(400, "invalid_image_count", "1-4 image inputs required")
+    if not isinstance(values, list) or not 1 <= len(values) <= max_images:
+        err(400, "invalid_image_count", f"1-{max_images} image inputs required")
     urls = []
     for item in values:
         if isinstance(item, dict):
@@ -268,7 +268,7 @@ async def edit(request: Request, authorization: str | None = Header(default=None
             raw = await request.json()
             if not isinstance(raw, dict):
                 err(400, "invalid_parameters", "JSON body must be an object")
-            sources = _edit_json_images(raw)
+            sources = _edit_json_images(raw, 8 if raw.get("model") == "minimax-h3-mysticxxx-v5" else 4)
             reserved = {"model", "prompt", "size", "n", "seed", "response_format",
                         "extra_body", "image", "images", "image_urls"}
             # Accept SDK-style top-level extra fields just as generations does.
@@ -326,8 +326,9 @@ async def edit(request: Request, authorization: str | None = Header(default=None
         else:
             err(415, "unsupported_media_type", "Use application/json or multipart/form-data")
 
-        if not 1 <= len(sources) <= 4:
-            err(400, "invalid_image_count", "1-4 images required (file upload or public HTTPS URLs)")
+        max_images = 8 if fields.get("model") == "minimax-h3-mysticxxx-v5" else 4
+        if not 1 <= len(sources) <= max_images:
+            err(400, "invalid_image_count", f"1-{max_images} images required (file upload or public HTTPS URLs)")
         try:
             body = GenerateRequest(**fields)
         except ValidationError as ex:
@@ -339,7 +340,7 @@ async def edit(request: Request, authorization: str | None = Header(default=None
         raise
 
     profile = profile_for(body.model, "edits")
-    if profile.adapter not in ("qwen_image", "viggle_turbo", "qwen_realtime") and not ("images" in profile.bindings or "image" in profile.bindings):
+    if profile.adapter not in ("qwen_image", "viggle_turbo", "qwen_realtime", "minimax_h3") and not ("images" in profile.bindings or "image" in profile.bindings):
         err(400, "unsupported_edit", "Model has no image input binding")
 
     with tempfile.TemporaryDirectory(prefix="hf_edit_") as folder:
