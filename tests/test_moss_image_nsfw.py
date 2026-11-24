@@ -110,6 +110,33 @@ class MossNsfwTests(unittest.TestCase):
         result_bytes.assert_called_once_with("/tmp/generated.png", self.profile)
         Client.return_value.close.assert_called_once()
 
+    def test_unwrapped_single_filepath_from_gradio_client(self):
+        """Real Gradio Client returns a plain filepath for one output."""
+        with (
+            patch("gateway.moss_image_nsfw.Client") as client,
+            patch("gateway.moss_image_nsfw.predict_logged",
+                  return_value="/tmp/image.png") as predict,
+            patch("gateway.moss_image_nsfw.result_bytes", return_value=b"png") as convert,
+        ):
+            output = run(self.profile, self.request, None)
+        self.assertEqual(output, b"png")
+        convert.assert_called_once_with("/tmp/image.png", self.profile)
+        self.assertEqual(predict.call_args.kwargs["api_name"], "/generate")
+        client.return_value.close.assert_called_once()
+
+    def test_gradio_file_data_response(self):
+        """Some Gradio clients provide a FileData-like path dictionary."""
+        with (
+            patch("gateway.moss_image_nsfw.Client"),
+            patch("gateway.moss_image_nsfw.predict_logged",
+                  return_value={"path": "/tmp/image.png", "orig_name": "image.png"}),
+            patch("gateway.moss_image_nsfw.result_bytes", return_value=b"png") as convert,
+        ):
+            output = run(self.profile, self.request, None)
+        self.assertEqual(output, b"png")
+        convert.assert_called_once_with(
+            {"path": "/tmp/image.png", "orig_name": "image.png"}, self.profile)
+
     def test_invalid_result_contract(self):
         with (
             patch("gateway.moss_image_nsfw.Client"),
