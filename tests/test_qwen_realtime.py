@@ -31,7 +31,7 @@ class QwenRealtimeTests(unittest.TestCase):
 
     def test_catalog_and_legacy_sizes_unchanged(self):
         models = load_profiles()
-        self.assertEqual(len(models), 5)
+        self.assertEqual(len(models), 6)
         self.assertEqual(models["qwen-image-2.1"].allowed_sizes, [
             "1024x1024", "1344x768", "768x1344", "1184x864", "864x1184",
             "2048x2048", "2688x1536", "1536x2688", "2368x1728", "1728x2368",
