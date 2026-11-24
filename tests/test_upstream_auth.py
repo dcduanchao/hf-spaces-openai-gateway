@@ -41,7 +41,7 @@ class IdentityForwardingTests(unittest.TestCase):
                 with patch("gateway.ui.api_generate", return_value=[buffer.getvalue()]):
                     with self.assertLogs("uvicorn.error", level="INFO") as captured:
                         ui.generate("文生图", "z-image-turbo", "cat", [],
-                                    "1024x1024", 1, -1, secret, "{}", "",
+                                    "1024x1024", 1, -1, True, secret, "{}", "",
                                     request=SimpleNamespace(headers={}))
         text = "\\n".join(captured.output)
         self.assertIn("source=studio", text)
@@ -116,7 +116,7 @@ class IdentityForwardingTests(unittest.TestCase):
                 with patch("gateway.ui.api_generate", return_value=[buffer.getvalue()]) as invoke:
                     images, message = ui.generate(
                         "文生图", "z-image-turbo", "cat", [], "1024x1024",
-                        1, -1, "hf_USERPRO123", "{}", "",
+                        1, -1, True, "hf_USERPRO123", "{}", "",
                         request=browser_request,
                     )
         self.assertEqual(len(images), 1)
