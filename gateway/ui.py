@@ -245,6 +245,8 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
         raise gr.Error("请上传图片，或先从图库预览并确认添加参考图片")
     if len(files) > 4:
         raise gr.Error("上传图片框最多 4 张参考图片")
+    if model_id == "mosss-image-4" and (custom_dimensions or "").strip():
+        raise gr.Error("mosss-image-4 仅支持尺寸下拉框中的 12 个固定选项，请清空自定义尺寸。")
     if model_id == QWEN_2_STEPS_MODEL and (custom_dimensions or "").strip():
         raise gr.Error("qwen-image-2.1-2 仅支持 Auto 或尺寸下拉框中的 7 个固定预设，请清空自定义尺寸。")
     size = (custom_dimensions or "").strip().replace("×", "x") or size
@@ -252,6 +254,8 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
         valid_sizes = {value for _, value in model_size_choices(p)}
         if size not in valid_sizes:
             raise gr.Error("请选择 qwen-image-2.1-2 的固定尺寸或 Auto")
+    if model_id == "mosss-image-4" and size not in p.allowed_sizes:
+        raise gr.Error("mosss-image-4 只支持上游固定的 12 个尺寸")
     if not (model_id == QWEN_2_STEPS_MODEL and size == "auto"):
         try:
             parse_size(size, p)
