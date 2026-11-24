@@ -384,6 +384,38 @@
       "result_path": [
         0
       ]
+    },
+    {
+      "id": "bfs-face-swap",
+      "display_name": "BFS Best Face Swap · 头部交换",
+      "adapter": "bfs_face_swap",
+      "space_id": "hugging-apps/bfs-best-face-swap",
+      "api_name": "/face_swap",
+      "enabled": true,
+      "description": "需要 2 张图片：参考人脸和目标身体/场景。仅选择 Turbo · Viggle 6-step 或 Base · Qwen-Image-2.1，其余参数按上游默认值。请仅在获得照片中人物许可时使用。",
+      "modes": [
+        "edits"
+      ],
+      "default_size": "1024x1024",
+      "allowed_sizes": [
+        "1024x1024"
+      ],
+      "bindings": {},
+      "fixed": {},
+      "extras": {
+        "base_model": {
+          "target": "base_model",
+          "kind": "str",
+          "default": "Turbo · Viggle 6-step",
+          "choices": [
+            "Turbo · Viggle 6-step",
+            "Base · Qwen-Image-2.1"
+          ]
+        }
+      },
+      "result_path": [
+        0
+      ]
     }
   ]
 }
