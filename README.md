@@ -61,6 +61,49 @@ Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 Ope
 
 OpenAI 标准 Images API 请求不要求提供 `seed` 字段，网关继续兼容省略该字段：省略时内部默认 `-1`（随机）。现有网关同时保留可选的非标准 `seed` 扩展，以兼容固定 Seed 的旧调用方；不应把 `seed` 描述成 OpenAI 官方标准参数。
 
+## MiniMax H3 Image MysticXXX V5（`minimax-h3-mysticxxx-v5`）
+
+上游：[baka999/MiniMax-H3-Image-MysticXXX-V5](https://huggingface.co/spaces/baka999/MiniMax-H3-Image-MysticXXX-V5)。通过 Gradio `/generate` 调用，支持文生图和最多 8 张参考图片的编辑；提示词可以使用 `<Picture 1>`、`<Picture 2>` 等引用输入图（按照上传顺序）。图库确认功能仍按原先最多 4 张的规则，直接手工上传可使用本模型的 8 张上限。其他模型继续最多 4 张。
+
+上游 **12 个参数**（依用户提供的 Gradio API 文档）：
+
+| 上游参数 | 类型 | 网关映射/默认值 |
+|---|---|---|
+| `prompt` | str | OpenAI `prompt` |
+| `images` | list of Gallery entries | `[{"image": handle_file(path), "caption": null}, ...]`，文生图用 `[]` |
+| `aspect` | str | `size=auto` → `auto`；指定尺寸 → 最近的标准宽高比，或用 `extra_body.aspect` 覆盖 |
+| `resolution` | str | `extra_body.resolution`，默认 `4 MP` |
+| `seed` | float | 固定 Seed 转浮点数；随机时发送 `0.0` |
+| `randomize` | bool | 网关 `seed=-1` → `true`，固定 Seed → `false` |
+| `enhance` | bool | `extra_body.enhance`，默认 `false` |
+| `reasoning_effort` | str | `extra_body.reasoning_effort`，默认 `low` |
+| `lora_scale` | float | `extra_body.lora_scale`，默认 `0.6` |
+| `lora_attn_scale` | float | `extra_body.lora_attn_scale`，默认 `0.5` |
+| `lora_mlp_scale` | float | `extra_body.lora_mlp_scale`，默认 `0.9` |
+| `lora_early_scale` | float | `extra_body.lora_early_scale`，默认 `0.4` |
+
+`aspect` 允许 `auto`、`1:1`、`5:4`、`4:3`、`3:2`、`16:9`、`21:9`、`4:5`、`3:4`、`2:3`、`9:16`。网页的 `size` 列出 Auto 与对应的 10 种比例参考尺寸；**这些尺寸用于选择宽高比，不保证精确输出像素**。返回值为 3 元素 `[image_filepath, seed, prompt_used]`，图片取索引 0。
+
+```json
+{
+  "model": "minimax-h3-mysticxxx-v5",
+  "prompt": "A cinematic portrait",
+  "size": "auto",
+  "seed": -1,
+  "extra_body": {
+    "resolution": "4 MP",
+    "enhance": false,
+    "reasoning_effort": "low",
+    "lora_scale": 0.6,
+    "lora_attn_scale": 0.5,
+    "lora_mlp_scale": 0.9,
+    "lora_early_scale": 0.4
+  }
+}
+```
+
+注意：示例默认值来自所提供 API 文档，未确认上游 `resolution`、`reasoning_effort` 文本输入支持的全部取值范围。提示词增强仅在上游配置 `H3_IMAGE_PE` 时适用于文生图。接入不代表已完成真实上游生成验证。
+
 ## MOSS Image NSFW Multi-LoRA（`moss-image-nsfw`）
 
 上游：[jmendelblatt/moss-image-nsfw-lora](https://huggingface.co/spaces/jmendelblatt/moss-image-nsfw-lora)，API 名 `/generate`。本模型为支持 Uncensored 和 Realistic Snapshot 两组 LoRA 的第三方 Space；网关仅转发调用，不在本地加载模型。
