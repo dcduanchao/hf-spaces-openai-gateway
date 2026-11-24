@@ -131,6 +131,9 @@ def invoke(profile: Profile, payload: dict, token: str | None, image_paths=None,
     if profile.adapter == "viggle_turbo":
         from .viggle_turbo import run
         return run(profile, payload, token, image_paths, ip_token=ip_token)
+    if profile.adapter == "moss_image_4":
+        from .moss_image_4 import run
+        return run(profile, payload, token, image_paths, ip_token=ip_token)
     if profile.adapter == "moss_image":
         from .moss_image import run
         return run(profile, payload, token, image_paths, ip_token=ip_token)
