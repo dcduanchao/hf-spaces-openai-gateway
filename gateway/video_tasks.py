@@ -8,7 +8,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore, Lock
 from . import history
-from .wan2_2_i2v_v3 import run, VideoUpstreamError
+from .wan2_2_i2v_v3 import VideoUpstreamError
+from .video_adapter import run
+from .minimax_h3_workflow import MODEL_ID as H3_ID, resolve_seed
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -57,6 +59,8 @@ def worker(path, record, payload, token, ip_token, paths):
         SLOTS.release()
 
 def create(payload, images, token, ip_token):
+    if payload.get("model") == H3_ID:
+        payload = resolve_seed(payload)
     if not SLOTS.acquire(blocking=False):
         raise OverflowError("Video queue is full")
     path = None

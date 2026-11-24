@@ -8,7 +8,8 @@ from fastapi.responses import FileResponse
 from starlette.datastructures import UploadFile
 from . import video_tasks
 from .image_inputs import validate_png_bytes, ImageInputError, MAX_IMAGE_BYTES
-from .wan2_2_i2v_v3 import MODEL_ID, build_kwargs
+from .video_adapter import MODELS, validate
+from .minimax_h3_workflow import MODEL_ID as H3_ID
 
 router = APIRouter(prefix="/v1/videos")
 
@@ -27,17 +28,22 @@ async def create_video(request: Request, authorization: str | None = Header(None
             allowed = {"model", "prompt", "seconds", "seed", "extra_body", "input_reference", "last_image"}
             if set(form) - allowed or any(len(form.getlist(k)) != 1 for k in form):
                 raise ValueError("Unknown or repeated field")
-            if form.get("model") != MODEL_ID:
+            model = form.get("model")
+            if model not in MODELS:
                 fail(404, "model_not_found", "Unknown video model")
             prompt = form.get("prompt")
             if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000:
                 raise ValueError("prompt must contain 1-4000 characters")
-            payload = dict(model=MODEL_ID, prompt=prompt, seconds=float(form.get("seconds", "4")),
+            if model == H3_ID and not token:
+                fail(400, "hf_token_required", "Workflow requires a personal HF Token")
+            if model == H3_ID and form.get("last_image") is not None:
+                raise ValueError("Workflow does not accept last_image")
+            payload = dict(model=model, prompt=prompt, seconds=float(form.get("seconds", "4")),
                            seed=int(form.get("seed", "-1")), extra_body=json.loads(form.get("extra_body", "{}")))
             images = []
             for key in ("input_reference", "last_image"):
                 item = form.get(key)
-                if item is None and key == "last_image":
+                if item is None and (key == "last_image" or model == H3_ID):
                     continue
                 if not isinstance(item, UploadFile):
                     raise ValueError(f"{key} must be an uploaded image")
@@ -48,7 +54,7 @@ async def create_video(request: Request, authorization: str | None = Header(None
                 path = Path(tmp) / f"{i}.png"
                 path.write_bytes(data)
                 paths.append(str(path))
-            build_kwargs(payload, paths)
+            validate(payload, paths)
         return await asyncio.to_thread(video_tasks.create, payload, images, token, request.headers.get("x-ip-token"))
     except (ValueError, TypeError, ImageInputError):
         fail(400, "invalid_parameters", "Invalid video parameters or image")
