@@ -55,6 +55,35 @@ pinned: false
 
 Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 OpenAI HTTP API（`127.0.0.1:7860`），网页不再直接创建上游 ZeroGPU Client。网页填写的 HF Token 通过 `X-HF-Token` 逐请求传给 API，后续身份和上游推理处理与 Postman/API 调用一致。文生图走 `/v1/images/generations`，确认选入上传框的多图编辑走 `/v1/images/edits`，图片顺序不变。API 统一负责历史记录与参考图/生成图的 Bucket 保存，不会因 UI 和 API 双重记录。
 
+## MOSS Image 4-Step LoRA（`mosss-image-4`）
+
+上游：[hugging-apps/moss-image-4step-lora](https://huggingface.co/spaces/hugging-apps/moss-image-4step-lora)，使用 Gradio `/generate`。公开模型 ID 按约定为 **`mosss-image-4`**（三个 s），仅支持文生图，使用现有 OpenAI `POST /v1/images/generations` 接口。
+
+上游请求**仅支持**三个具名参数：`prompt: str`、`resolution: Literal[...]`、`seed: int`。上游返回 2 项，分别为 `[0]` 图片文件路径、`[1]` Markdown 文本；网关只把第一项作为图片结果，并使用现有图片持久化逻辑。
+
+上游 `resolution` 限定为下列 12 种选项，网关 `size` 使用 ASCII `x`，适配器在请求时转换为**包含空格及乘号**的原始枚举字符串（如 `1024x768` → `1024 × 768`）：
+
+```text
+1024x1024  1280x1280  1440x1440
+768x512    1024x768   1280x960   1440x1280   1824x1024
+512x768    768x1024   960x1280   1024x1824
+```
+
+网页的尺寸选择只有上述 12 项，并禁止此模型填写自定义尺寸；OpenAI API 也拒绝其他 `size`。此模型上游没有可选步数、LoRA 强度或图片编辑参数，切勿给它附加 `steps`、`lora_strength` 等额外字段。网关使用 `seed=-1` 时自行随机生成整数 Seed，显式非负 Seed 则直接传递。
+
+```json
+{
+  "model": "mosss-image-4",
+  "prompt": "A cat in sunlight",
+  "size": "1024x1024",
+  "seed": -1,
+  "n": 1,
+  "response_format": "url"
+}
+```
+
+**验证说明：** 参数定义依据提供的 Gradio API 文档；真实上游生成仍取决于第三方 Space 状态和额度。
+
 ## MOSS Image 8-Step DMD（`moss-image-8`）
 
 上游 Space：[hugging-apps/moss-image-8-step-dmd](https://huggingface.co/spaces/hugging-apps/moss-image-8-step-dmd)。网关通过 Gradio `/generate` 端点调用，**仅支持文生图**；无需在网关部署 GPU 模型。
