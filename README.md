@@ -55,6 +55,47 @@ pinned: false
 
 Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 OpenAI HTTP API（`127.0.0.1:7860`），网页不再直接创建上游 ZeroGPU Client。网页填写的 HF Token 通过 `X-HF-Token` 逐请求传给 API，后续身份和上游推理处理与 Postman/API 调用一致。文生图走 `/v1/images/generations`，确认选入上传框的多图编辑走 `/v1/images/edits`，图片顺序不变。API 统一负责历史记录与参考图/生成图的 Bucket 保存，不会因 UI 和 API 双重记录。
 
+## MOSS Image NSFW Multi-LoRA（`moss-image-nsfw`）
+
+上游：[jmendelblatt/moss-image-nsfw-lora](https://huggingface.co/spaces/jmendelblatt/moss-image-nsfw-lora)，API 名 `/generate`。本模型为支持 Uncensored 和 Realistic Snapshot 两组 LoRA 的第三方 Space；网关仅转发调用，不在本地加载模型。
+
+对外模型 ID：`moss-image-nsfw`，仅支持 `POST /v1/images/generations`（文生图），不支持图片编辑。根据该 Space 提供的 API 文档，上游接收且必须提供以下 10 个具名参数：
+
+| 上游参数 | 类型 | 网关来源或示例默认值 |
+|---|---|---|
+| `prompt` | str | 请求的 `prompt` |
+| `negative_prompt` | str | `extra_body.negative_prompt`；默认使用上游 API 示例提供的负面提示词 |
+| `width` | float | 从 `size` 的宽度解析 |
+| `height` | float | 从 `size` 的高度解析 |
+| `steps` | float | `extra_body.steps`，默认 30 |
+| `guidance_scale` | float | `extra_body.guidance_scale`，默认 3.0 |
+| `lora_scale` | float | `extra_body.lora_scale`，默认 0.7 |
+| `realistic_scale` | float | `extra_body.realistic_scale`，默认 1.0 |
+| `add_trigger` | bool | `extra_body.add_trigger`，默认 true |
+| `seed` | int | 请求的 `seed`，`-1` 由网关改为随机非负整数 |
+
+上游输出是 **只含 1 项** 的数组 `[image_filepath]`，与之前的 MOSS 8-Step、4-Step 返回形式不同。网关提取该图片并走现有 PNG/历史持久化流程。默认值依据用户提供的 Gradio 文档示例；上游 Slider 的上下限没有可靠确认，不能将示例值解释为已验证的允许范围。UI 提供常用尺寸预设，其他网关允许的尺寸须受上游自身限制。
+
+```json
+{
+  "model": "moss-image-nsfw",
+  "prompt": "A portrait with natural window lighting",
+  "size": "1024x1024",
+  "seed": -1,
+  "response_format": "url",
+  "extra_body": {
+    "negative_prompt": "blurry, low quality",
+    "steps": 30,
+    "guidance_scale": 3.0,
+    "lora_scale": 0.7,
+    "realistic_scale": 1.0,
+    "add_trigger": true
+  }
+}
+```
+
+实际生成成功、上游可用性及限制仍需线上验证；第三方 Space 可能有自己的访问和内容使用规则。
+
 ## MOSS Image 4-Step LoRA（`mosss-image-4`）
 
 上游：[hugging-apps/moss-image-4step-lora](https://huggingface.co/spaces/hugging-apps/moss-image-4step-lora)，使用 Gradio `/generate`。公开模型 ID 按约定为 **`mosss-image-4`**（三个 s），仅支持文生图，使用现有 OpenAI `POST /v1/images/generations` 接口。
