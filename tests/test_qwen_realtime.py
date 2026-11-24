@@ -45,21 +45,22 @@ class QwenRealtimeTests(unittest.TestCase):
 
     def test_all_three_bands_and_seven_ratios(self):
         self.assertEqual(len(BASE_SIZES), 7)
-        self.assertEqual(RESOLUTIONS, ("512", "1024", "1536"))
+        self.assertEqual(RESOLUTIONS, (512, 1024, 1536))
         self.assertEqual(len(preset_sizes()), 21)
+        self.assertTrue(all(type(res) is int for res in RESOLUTIONS))
         for size, band_and_ratio in preset_sizes().items():
             self.assertIn(size, self.model.allowed_sizes)
             w, h = map(int, size.split("x"))
             self.assertEqual(choose_parameters(w, h), band_and_ratio)
 
     def test_custom_size_maps_to_nearest_ratio_and_area(self):
-        self.assertEqual(choose_parameters(1024,1536), ("1024", "2:3"))
-        self.assertEqual(choose_parameters(1024,1024), ("1024", "1:1"))
+        self.assertEqual(choose_parameters(1024,1536), (1024, "2:3"))
+        self.assertEqual(choose_parameters(1024,1024), (1024, "1:1"))
 
     def test_generate_kwargs_without_enhancement_or_realtime_session(self):
         kw = build_kwargs(self.model, {"prompt": "cat", "size": "1024x1024", "seed": 6})
         self.assertEqual(kw, {"prompt": "cat", "input_images": [], "seed": 6,
-                              "resolution": "1024", "aspect_ratio": "1:1"})
+                              "resolution": 1024, "aspect_ratio": "1:1"})
         self.assertNotIn("enhance", kw)
         self.assertNotIn("steps", kw)
 
@@ -68,7 +69,7 @@ class QwenRealtimeTests(unittest.TestCase):
         with patch("gateway.qwen_realtime.handle_file", side_effect=lambda p: {"path":p}):
             kw = build_kwargs(self.model, {"prompt":"portrait", "size":"896x1200", "seed":7}, paths)
         self.assertEqual([item["image"]["path"] for item in kw["input_images"]], paths)
-        self.assertEqual(kw["resolution"], "1024")
+        self.assertEqual(kw["resolution"], 1024)
         self.assertEqual(kw["aspect_ratio"], "3:4")
         with self.assertRaises(ValueError):
             build_kwargs(self.model, {"prompt":"cat"}, paths + ["e.png"])
@@ -89,7 +90,7 @@ class QwenRealtimeTests(unittest.TestCase):
         self.assertEqual(result, tiny_png())
         self.assertEqual(Client.call_args.kwargs["token"], "hf_TEST_TOKEN")
         self.assertEqual(predict.call_args.kwargs["api_name"], "/generate")
-        self.assertEqual(predict.call_args.kwargs["kwargs"]["resolution"], "1024")
+        self.assertEqual(predict.call_args.kwargs["kwargs"]["resolution"], 1024)
         Client.return_value.close.assert_called_once()
 
     def test_ui_standard_display_ratio_and_model_specific_choices(self):
@@ -111,10 +112,12 @@ class QwenRealtimeTests(unittest.TestCase):
 
     def test_auto_and_fixed_reference_dimensions_map_to_upstream(self):
         auto = build_kwargs(self.model, {"prompt": "cat", "size": "auto", "seed": 9})
-        self.assertEqual((auto["resolution"], auto["aspect_ratio"]), ("1536", "Auto"))
+        self.assertEqual((auto["resolution"], auto["aspect_ratio"]), (1536, "Auto"))
+        self.assertIs(type(auto["resolution"]), int)
         for ratio, (w, h) in BASE_SIZES.items():
             kw = build_kwargs(self.model, {"prompt": "cat", "size": f"{w}x{h}", "seed": 9})
-            self.assertEqual((kw["resolution"], kw["aspect_ratio"]), ("1536", ratio))
+            self.assertEqual((kw["resolution"], kw["aspect_ratio"]), (1536, ratio))
+            self.assertIs(type(kw["resolution"]), int)
 
     def test_auto_size_accepted_by_public_api(self):
         with tempfile.TemporaryDirectory() as d:
