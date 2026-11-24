@@ -29,6 +29,7 @@ from .upstream_auth import token_tail
 
 STANDARD_RATIOS = ("1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16")
 QWEN_2_STEPS_MODEL = "qwen-image-2.1-2"
+MINIMAX_H3_MODEL = "minimax-h3-mysticxxx-v5"
 
 
 def SIZE_LABEL(size: str) -> str:
@@ -45,6 +46,8 @@ def SIZE_LABEL(size: str) -> str:
 
 
 def model_size_choices(profile):
+    if profile.id == MINIMAX_H3_MODEL:
+        return [("Auto（上游比例自动）", "auto")] + [(SIZE_LABEL(value), value) for value in profile.allowed_sizes]
     if profile.id == QWEN_2_STEPS_MODEL:
         from .qwen_realtime import BASE_SIZES
         return [("Auto", "auto")] + [
@@ -55,11 +58,13 @@ def model_size_choices(profile):
 
 
 def default_size_value(profile):
-    return "auto" if profile.id == QWEN_2_STEPS_MODEL else profile.default_size
+    return "auto" if profile.id in (QWEN_2_STEPS_MODEL, MINIMAX_H3_MODEL) else profile.default_size
 
 
 def size_note(profile) -> str:
     """Summarize the current model's preset dimensions without hiding any."""
+    if profile.id == MINIMAX_H3_MODEL:
+        return ("**尺寸：** Auto + 10 种比例参考尺寸；模型的输出分辨率由上游 resolution 档位决定，默认 4 MP。")
     if profile.id == QWEN_2_STEPS_MODEL:
         return ("**尺寸：** Auto + 7 种固定宽高比；所列像素是上游比例参考尺寸，"
                 "实际分辨率由 1536 档位及上游模型决定，并不保证与参考尺寸一致。")
@@ -252,8 +257,9 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, random_seed
     files = image_files or []
     if mode == "图片编辑" and not files:
         raise gr.Error("请上传图片，或先从图库预览并确认添加参考图片")
-    if len(files) > 4:
-        raise gr.Error("上传图片框最多 4 张参考图片")
+    max_files = 8 if model_id == MINIMAX_H3_MODEL else 4
+    if len(files) > max_files:
+        raise gr.Error(f"当前模型最多支持 {max_files} 张参考图片")
     if model_id == "mosss-image-4" and (custom_dimensions or "").strip():
         raise gr.Error("mosss-image-4 仅支持尺寸下拉框中的 12 个固定选项，请清空自定义尺寸。")
     if model_id == QWEN_2_STEPS_MODEL and (custom_dimensions or "").strip():
@@ -265,7 +271,7 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, random_seed
             raise gr.Error("请选择 qwen-image-2.1-2 的固定尺寸或 Auto")
     if model_id == "mosss-image-4" and size not in p.allowed_sizes:
         raise gr.Error("mosss-image-4 只支持上游固定的 12 个尺寸")
-    if not (model_id == QWEN_2_STEPS_MODEL and size == "auto"):
+    if not (model_id in (QWEN_2_STEPS_MODEL, MINIMAX_H3_MODEL) and size == "auto"):
         try:
             parse_size(size, p)
         except ValueError as exc:
@@ -329,7 +335,7 @@ def create_ui():
                 mode = gr.Radio(["文生图", "图片编辑"], value="文生图", label="生成模式")
                 with gr.Column(visible=False) as upload_panel:
                     source = gr.File(file_count="multiple", type="filepath", file_types=["image"],
-                        label="上传图片 / 已确认图库参考图（最多 4 张）")
+                        label="上传图片 / 已确认图库参考图（其他模型最多 4 张；MiniMax H3 最多 8 张）")
                     upload_preview = gr.Gallery(label="已加入编辑的图片预览（包括手动上传与图库确认）",
                         columns=4, height=180, preview=True)
                 edit_warning = gr.Markdown("", visible=True)
