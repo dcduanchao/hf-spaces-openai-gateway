@@ -117,7 +117,7 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None, ip
         err(400, "unsupported_format", "Supported response_format values: url, b64_json")
     try:
         # The 2-step model's upstream API supports the literal Auto aspect ratio.
-        if not (p.id in ("qwen-image-2.1-2", "minimax-h3-mysticxxx-v5") and (payload.get("size") or p.default_size) == "auto"):
+        if not (p.id in ("qwen-image-2.1-2", "h3-my-v5") and (payload.get("size") or p.default_size) == "auto"):
             parse_size(payload.get("size") or p.default_size, p)
     except ValueError as ex:
         err(400, "invalid_parameters", str(ex))
@@ -268,7 +268,7 @@ async def edit(request: Request, authorization: str | None = Header(default=None
             raw = await request.json()
             if not isinstance(raw, dict):
                 err(400, "invalid_parameters", "JSON body must be an object")
-            sources = _edit_json_images(raw, 8 if raw.get("model") == "minimax-h3-mysticxxx-v5" else 4)
+            sources = _edit_json_images(raw, 8 if raw.get("model") == "h3-my-v5" else 4)
             reserved = {"model", "prompt", "size", "n", "seed", "response_format",
                         "extra_body", "image", "images", "image_urls"}
             # Accept SDK-style top-level extra fields just as generations does.
@@ -326,7 +326,7 @@ async def edit(request: Request, authorization: str | None = Header(default=None
         else:
             err(415, "unsupported_media_type", "Use application/json or multipart/form-data")
 
-        max_images = 8 if fields.get("model") == "minimax-h3-mysticxxx-v5" else 4
+        max_images = 8 if fields.get("model") == "h3-my-v5" else 4
         if not 1 <= len(sources) <= max_images:
             err(400, "invalid_image_count", f"1-{max_images} images required (file upload or public HTTPS URLs)")
         try:
