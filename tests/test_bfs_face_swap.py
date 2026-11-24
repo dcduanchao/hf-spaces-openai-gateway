@@ -26,8 +26,9 @@ def tiny_png():
 
 class BfsFaceSwapTests(unittest.TestCase):
     def setUp(self):
-        self.profile = load_profiles()["bfs-face-swap"]
-        self.payload = {"model": "bfs-face-swap", "prompt": DEFAULT_PROMPT,
+        self.profile = load_profiles()["bfs-face-swap-t6"]
+        self.q2_profile = load_profiles()["bfs-face-swap-q2"]
+        self.payload = {"model": "bfs-face-swap-t6", "prompt": DEFAULT_PROMPT,
                         "size": "1024x1024", "seed": -1, "extra_body": {}}
         self.paths = ["/tmp/reference.png", "/tmp/target.png"]
 
@@ -56,9 +57,9 @@ class BfsFaceSwapTests(unittest.TestCase):
         self.assertEqual(data["prompt"], DEFAULT_PROMPT)
 
     def test_two_model_options_fixed_seed_and_dynamic_steps(self):
-        request = {**self.payload, "seed": 42, "extra_body": {"base_model": BASE}}
+        request = {**self.payload, "model": "bfs-face-swap-q2", "seed": 42}
         with patch("gateway.bfs_face_swap.handle_file", side_effect=lambda p: p):
-            data = build_kwargs(self.profile, request, self.paths, 30.0)
+            data = build_kwargs(self.q2_profile, request, self.paths, 30.0)
         self.assertEqual(data["base_model"], BASE)
         self.assertEqual(data["num_inference_steps"], 30.0)
         self.assertEqual(data["seed"], 42.0)
@@ -68,7 +69,7 @@ class BfsFaceSwapTests(unittest.TestCase):
         for paths in ([], [self.paths[0]], self.paths + ["/tmp/third.png"]):
             with self.subTest(paths=paths), self.assertRaises(ValueError):
                 build_kwargs(self.profile, self.payload, paths, 6)
-        for extra in ({"base_model": "invalid"}, {"steps": 25}):
+        for extra in ({"base_model": BASE}, {"steps": 25}):
             with self.subTest(extra=extra), self.assertRaises(ValueError):
                 build_kwargs(self.profile, {**self.payload, "extra_body": extra}, self.paths, 6)
 
@@ -100,7 +101,7 @@ class BfsFaceSwapTests(unittest.TestCase):
         client.return_value.close.assert_called_once()
 
     def test_base_model_uses_30_step_default_without_mode_change(self):
-        request = {**self.payload, "extra_body": {"base_model": BASE}}
+        request = {**self.payload, "model": "bfs-face-swap-q2"}
         with (
             patch("gateway.bfs_face_swap.Client") as client,
             patch("gateway.bfs_face_swap.handle_file", side_effect=lambda p: p),
@@ -108,7 +109,7 @@ class BfsFaceSwapTests(unittest.TestCase):
                   return_value=(("/tmp/before.png", "/tmp/after.png"), 10.0)) as predict,
             patch("gateway.bfs_face_swap.result_bytes", return_value=b"image"),
         ):
-            self.assertEqual(run(self.profile, request, None, self.paths), [b"image", b"image"])
+            self.assertEqual(run(self.q2_profile, request, None, self.paths), [b"image", b"image"])
         client.return_value.predict.assert_not_called()
         self.assertEqual(predict.call_args.kwargs["kwargs"]["base_model"], BASE)
         self.assertEqual(predict.call_args.kwargs["kwargs"]["num_inference_steps"], 30.0)
@@ -126,6 +127,30 @@ class BfsFaceSwapTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "face_swap"):
                 run(self.profile, self.payload, None, self.paths)
 
+    def test_two_independent_public_model_profiles(self):
+        profiles = load_profiles()
+        self.assertNotIn("bfs-face-swap", profiles)
+        self.assertEqual(profiles["bfs-face-swap-t6"].adapter, "bfs_face_swap")
+        self.assertEqual(profiles["bfs-face-swap-q2"].adapter, "bfs_face_swap")
+        self.assertEqual(profiles["bfs-face-swap-t6"].extras, {})
+        self.assertEqual(profiles["bfs-face-swap-q2"].extras, {})
+
+    def test_q2_api_selects_base_without_extra_parameters(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / ".history_bucket_ready").write_text("ok")
+            with patch.object(history, "ROOT", root):
+                with patch("gateway.main.invoke", return_value=[tiny_png(), tiny_png()]) as invoke:
+                    response = TestClient(app).post("/v1/images/edits", data={
+                        "model": "bfs-face-swap-q2",
+                        "prompt": DEFAULT_PROMPT,
+                        "response_format": "b64_json",
+                    }, files=[("image", ("face.png", tiny_png(), "image/png")),
+                              ("image", ("target.png", tiny_png(), "image/png"))])
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(invoke.call_args.args[0].id, "bfs-face-swap-q2")
+                self.assertEqual(len(response.json()["data"]), 2)
+
     def test_api_requires_exactly_two_images(self):
         with tempfile.TemporaryDirectory() as root_dir:
             root = Path(root_dir)
@@ -142,7 +167,7 @@ class BfsFaceSwapTests(unittest.TestCase):
                 with patch("gateway.main.invoke", return_value=[tiny_png(), tiny_png()]) as invoker:
                     result = client.post("/v1/images/edits", data={
                         "model": self.profile.id, "prompt": DEFAULT_PROMPT,
-                        "response_format": "b64_json", "extra_body": '{"base_model":"Base · Qwen-Image-2.1"}',
+                        "response_format": "b64_json",
                     }, files=[("image", ("face.png", tiny_png(), "image/png")),
                               ("image", ("target.png", tiny_png(), "image/png"))])
                 self.assertEqual(result.status_code, 200, result.text)
@@ -156,15 +181,16 @@ class BfsFaceSwapTests(unittest.TestCase):
 
     def test_studio_simple_path_and_order(self):
         with patch("gateway.ui.api_generate", return_value=[tiny_png(), tiny_png()]) as api:
-            gallery, info = generate_face_swap(self.paths[0], self.paths[1], TURBO, "hf_TEST")
+            gallery, info = generate_face_swap(self.paths[0], self.paths[1], "bfs-face-swap-t6", "hf_TEST")
         self.assertEqual(len(gallery), 2)
         self.assertEqual([label for _, label in gallery],
                          ["Before · 原图", "After · 换脸结果"])
         self.assertIn("面部交换完成", info)
         self.assertEqual(api.call_args.kwargs["image_paths"], self.paths)
-        self.assertEqual(api.call_args.args[0]["extra_body"], {"base_model": TURBO})
+        self.assertEqual(api.call_args.args[0]["extra_body"], {})
+        self.assertEqual(api.call_args.args[0]["model"], "bfs-face-swap-t6")
         with self.assertRaises(Exception):
-            generate_face_swap(None, self.paths[1], TURBO, None)
+            generate_face_swap(None, self.paths[1], "bfs-face-swap-t6", None)
 
 
 if __name__ == "__main__":
