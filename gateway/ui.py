@@ -29,7 +29,7 @@ from .upstream_auth import token_tail
 
 STANDARD_RATIOS = ("1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16")
 QWEN_2_STEPS_MODEL = "qwen-image-2.1-2"
-MINIMAX_H3_MODEL = "minimax-h3-mysticxxx-v5"
+MINIMAX_H3_MODEL = "h3-my-v5"
 
 
 def SIZE_LABEL(size: str) -> str:
