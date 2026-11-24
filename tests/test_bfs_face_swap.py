@@ -11,7 +11,7 @@ from PIL import Image
 
 from gateway import history
 from gateway.bfs_face_swap import (
-    BASE, TURBO, DEFAULT_PROMPT, build_kwargs, image_after, run,
+    BASE, TURBO, DEFAULT_PROMPT, build_kwargs, image_after, image_pair, run,
 )
 from gateway.main import app
 from gateway.models import load_profiles
@@ -73,6 +73,8 @@ class BfsFaceSwapTests(unittest.TestCase):
                 build_kwargs(self.profile, {**self.payload, "extra_body": extra}, self.paths, 6)
 
     def test_after_image_is_selected(self):
+        self.assertEqual(image_pair((("/tmp/before.png", "/tmp/after.png"), 25.0)),
+                         ["/tmp/before.png", "/tmp/after.png"])
         self.assertEqual(image_after((("/tmp/before.png", "/tmp/after.png"), 25.0)),
                          "/tmp/after.png")
         for result in ((None, 2.0), (("/tmp/before.png", None), 2.0), ("bad", 2.0)):
@@ -88,11 +90,13 @@ class BfsFaceSwapTests(unittest.TestCase):
             patch("gateway.bfs_face_swap.result_bytes", return_value=b"image") as output,
         ):
             client.return_value.predict.return_value = 6.0
-            self.assertEqual(run(self.profile, self.payload, "hf_USER", self.paths), b"image")
+            self.assertEqual(run(self.profile, self.payload, "hf_USER", self.paths), [b"image", b"image"])
         client.return_value.predict.assert_not_called()
         self.assertEqual(predict.call_args.kwargs["api_name"], "/face_swap")
         self.assertEqual(predict.call_args.kwargs["kwargs"]["num_inference_steps"], 6.0)
-        output.assert_called_once_with("/tmp/after.png", self.profile)
+        self.assertEqual(output.call_count, 2)
+        self.assertEqual([call.args[0] for call in output.call_args_list],
+                         ["/tmp/before.png", "/tmp/after.png"])
         client.return_value.close.assert_called_once()
 
     def test_base_model_queries_upstream_mode_change(self):
@@ -105,7 +109,7 @@ class BfsFaceSwapTests(unittest.TestCase):
             patch("gateway.bfs_face_swap.result_bytes", return_value=b"image"),
         ):
             client.return_value.predict.return_value = 28.0
-            self.assertEqual(run(self.profile, request, None, self.paths), b"image")
+            self.assertEqual(run(self.profile, request, None, self.paths), [b"image", b"image"])
         client.return_value.predict.assert_called_once_with(
             base_model=BASE, api_name="/on_mode_change")
         self.assertEqual(predict.call_args.kwargs["kwargs"]["num_inference_steps"], 28.0)
@@ -139,7 +143,7 @@ class BfsFaceSwapTests(unittest.TestCase):
                                for i in range(count)])
                     self.assertEqual(response.status_code, 400, response.text)
                     self.assertEqual(response.json()["error"]["code"], "invalid_image_count")
-                with patch("gateway.main.invoke", return_value=tiny_png()) as invoker:
+                with patch("gateway.main.invoke", return_value=[tiny_png(), tiny_png()]) as invoker:
                     result = client.post("/v1/images/edits", data={
                         "model": self.profile.id, "prompt": DEFAULT_PROMPT,
                         "response_format": "b64_json", "extra_body": '{"base_model":"Base · Qwen-Image-2.1"}',
@@ -148,12 +152,18 @@ class BfsFaceSwapTests(unittest.TestCase):
                 self.assertEqual(result.status_code, 200, result.text)
                 self.assertEqual(len(invoker.call_args.kwargs["image_paths"]), 2)
                 self.assertEqual(invoker.call_args.args[0].adapter, "bfs_face_swap")
-                self.assertEqual(base64.b64decode(result.json()["data"][0]["b64_json"]), tiny_png())
+                self.assertEqual(len(result.json()["data"]), 2)
+                self.assertEqual([base64.b64decode(item["b64_json"])
+                                  for item in result.json()["data"]], [tiny_png(), tiny_png()])
+                record = history.list_records()["items"][0]
+                self.assertEqual(len(history.get_record(record["id"])["images"]), 2)
 
     def test_studio_simple_path_and_order(self):
-        with patch("gateway.ui.api_generate", return_value=[tiny_png()]) as api:
+        with patch("gateway.ui.api_generate", return_value=[tiny_png(), tiny_png()]) as api:
             gallery, info = generate_face_swap(self.paths[0], self.paths[1], TURBO, "hf_TEST")
-        self.assertEqual(len(gallery), 1)
+        self.assertEqual(len(gallery), 2)
+        self.assertEqual([label for _, label in gallery],
+                         ["Before · 原图", "After · 换脸结果"])
         self.assertIn("面部交换完成", info)
         self.assertEqual(api.call_args.kwargs["image_paths"], self.paths)
         self.assertEqual(api.call_args.args[0]["extra_body"], {"base_model": TURBO})
