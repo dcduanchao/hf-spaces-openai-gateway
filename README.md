@@ -55,6 +55,36 @@ pinned: false
 
 Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 OpenAI HTTP API（`127.0.0.1:7860`），网页不再直接创建上游 ZeroGPU Client。网页填写的 HF Token 通过 `X-HF-Token` 逐请求传给 API，后续身份和上游推理处理与 Postman/API 调用一致。文生图走 `/v1/images/generations`，确认选入上传框的多图编辑走 `/v1/images/edits`，图片顺序不变。API 统一负责历史记录与参考图/生成图的 Bucket 保存，不会因 UI 和 API 双重记录。
 
+## MOSS Image 8-Step DMD（`moss-image-8`）
+
+上游 Space：[hugging-apps/moss-image-8-step-dmd](https://huggingface.co/spaces/hugging-apps/moss-image-8-step-dmd)。网关通过 Gradio `/generate` 端点调用，**仅支持文生图**；无需在网关部署 GPU 模型。
+
+公开模型 ID：`moss-image-8`，OpenAI Images API 路径保持 `POST /v1/images/generations`。
+
+根据上游提供的 API 文档，`/generate` 请求恰好包含 7 个参数：`prompt`（str）、`height`（float）、`width`（float）、`num_steps`（float）、`seed`（int）、`randomize_seed`（bool）、`lora_strength`（float）；返回 `[image_filepath, used_seed]`。网关提取首项作为图片，保留现有 PNG 转换和图片历史持久化。
+
+- `size` 解析为 `height`、`width`，上游接收浮点数；UI 提供常用尺寸选项，也可在网关允许的范围内自定义。**预设为网关推荐值，不代表已验证上游 Slider 的全部尺寸约束**。
+- `extra_body.steps` 对应 `num_steps`，默认 8；`extra_body.lora_strength` 对应 `lora_strength`，默认 0.7。本地防御性校验要求步数为正、强度在 0～1 之间；具体滑块范围应以上游 Space 实际 API 为准。
+- 使用网关 `seed=-1` 时，向上游发送 `seed=0, randomize_seed=true`；显式指定非负 Seed 时，发送对应整数和 `randomize_seed=false`，保证固定 Seed 不会意外随机化。
+- 支持调用者按请求提供 `X-HF-Token`，不使用网关所有者 Token 兜底；仍受上游公开 Space 的额度与限流控制。
+
+```json
+{
+  "model": "moss-image-8",
+  "prompt": "A cat in sunlight",
+  "size": "1024x1024",
+  "seed": -1,
+  "n": 1,
+  "response_format": "url",
+  "extra_body": {
+    "steps": 8,
+    "lora_strength": 0.7
+  }
+}
+```
+
+注：此接入是基于公开 `/generate` 参数契约实现，真实上游推理成功、可用额度及尺寸滑块范围仍需在部署后验证。
+
 ## Qwen Image 2.1 · 2 Steps
 
 新模型公开 ID：`qwen-image-2.1-2`，对应上游 [linoyts/qwen-image-2-1-realtime](https://huggingface.co/spaces/linoyts/qwen-image-2-1-realtime)，单次生成/编辑使用 `/generate`，不启动 `/realtime_session`，也不使用 `/prepare` 提示词增强。模型固定使用两步 DMD2 LoRA，不提供推理步数自定义参数。
