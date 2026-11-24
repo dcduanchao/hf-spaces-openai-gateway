@@ -206,6 +206,39 @@
       "result_path": [
         0
       ]
+    },
+    {
+      "id": "mosss-image-4",
+      "display_name": "MOSS Image · 4-Step LoRA",
+      "adapter": "moss_image_4",
+      "space_id": "hugging-apps/moss-image-4step-lora",
+      "api_name": "/generate",
+      "enabled": true,
+      "description": "MOSS Image 4-Step LoRA · 文生图，固定 4 步；上游 /generate 接受 prompt、resolution（12 个固定选项）、seed，不支持任意尺寸或额外推理参数。",
+      "modes": [
+        "generations"
+      ],
+      "default_size": "1024x1024",
+      "allowed_sizes": [
+        "1024x1024",
+        "1280x1280",
+        "1440x1440",
+        "768x512",
+        "1024x768",
+        "1280x960",
+        "1440x1280",
+        "1824x1024",
+        "512x768",
+        "768x1024",
+        "960x1280",
+        "1024x1824"
+      ],
+      "bindings": {},
+      "fixed": {},
+      "extras": {},
+      "result_path": [
+        0
+      ]
     }
   ]
 }
