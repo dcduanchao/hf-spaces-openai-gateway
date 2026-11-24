@@ -16,7 +16,7 @@ from gateway.qwen_realtime import (
     BASE_SIZES, RESOLUTIONS, MAX_REFERENCES, build_kwargs,
     choose_parameters, preset_sizes, run,
 )
-from gateway.ui import SIZE_LABEL, size_note, model_size_choices, default_size_value
+from gateway.ui import SIZE_LABEL, size_note, model_size_choices, default_size_value, model_space_link, selected_model
 
 
 def tiny_png():
@@ -109,6 +109,18 @@ class QwenRealtimeTests(unittest.TestCase):
         self.assertEqual(len(model_size_choices(load_profiles()["qwen-image-2.1"])), 10)
         self.assertIn("7 种固定宽高比", size_note(self.model))
         self.assertIn("10 种预设", size_note(load_profiles()["qwen-image-2.1"]))
+
+    def test_selected_model_space_links_open_new_tab(self):
+        for profile in load_profiles().values():
+            html = model_space_link(profile)
+            self.assertIn(f"https://huggingface.co/spaces/{profile.space_id}", html)
+            self.assertIn('target="_blank"', html)
+            self.assertIn('rel="noopener noreferrer"', html)
+            updates = selected_model(profile.id)
+            self.assertEqual(len(updates), 7)
+            self.assertIn(profile.space_id, updates[2]["value"])
+        self.assertEqual(model_space_link(None), "")
+        self.assertEqual(selected_model("not-a-model")[2]["value"], "")
 
     def test_auto_and_fixed_reference_dimensions_map_to_upstream(self):
         auto = build_kwargs(self.model, {"prompt": "cat", "size": "auto", "seed": 9})
