@@ -24,7 +24,7 @@ def tiny_png():
 
 class MiniMaxH3Tests(unittest.TestCase):
     def setUp(self):
-        self.profile = load_profiles()["minimax-h3-mysticxxx-v5"]
+        self.profile = load_profiles()["h3-my-v5"]
         self.payload = {"model": self.profile.id, "prompt": "a cat", "size": "auto", "seed": -1}
 
     def test_catalog_and_studio(self):
