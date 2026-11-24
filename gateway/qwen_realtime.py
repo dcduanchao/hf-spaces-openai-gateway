@@ -1,7 +1,7 @@
 """Adapter for linoyts/qwen-image-2-1-realtime's 2-step /generate API.
 
 The upstream generate endpoint accepts prompt, gallery, seed, resolution
-("512"/"1024"/"1536"), aspect_ratio (Auto or seven fixed ratios).
+(integer choices 512/1024/1536), aspect_ratio (Auto or seven fixed ratios).
 No prepare or realtime session is required for a single image request.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ BASE_SIZES = {
     "16:9": (2752, 1536),
     "9:16": (1536, 2752),
 }
-RESOLUTIONS = ("512", "1024", "1536")
+RESOLUTIONS = (512, 1024, 1536)
 MAX_REFERENCES = 4
 MAX_SEED = 2**31 - 1
 
@@ -34,13 +34,13 @@ def preset_sizes():
     ASPECT_RATIOS reference sizes, not guaranteed pixel-exact outputs.
     """
     return {
-        f"{round(w * int(res) / 2048)}x{round(h * int(res) / 2048)}": (res, ratio)
+        f"{round(w * res / 2048)}x{round(h * res / 2048)}": (res, ratio)
         for res in RESOLUTIONS
         for ratio, (w, h) in BASE_SIZES.items()
     }
 
 
-def choose_parameters(width: int, height: int) -> tuple[str, str]:
+def choose_parameters(width: int, height: int) -> tuple[int, str]:
     known = preset_sizes().get(f"{width}x{height}")
     if known:
         return known
@@ -50,20 +50,20 @@ def choose_parameters(width: int, height: int) -> tuple[str, str]:
     ratio = min(BASE_SIZES, key=lambda r: abs(math.log(target_ratio / (BASE_SIZES[r][0] / BASE_SIZES[r][1]))))
     base_w, base_h = BASE_SIZES[ratio]
     target_area = width * height
-    resolution = min(RESOLUTIONS, key=lambda res: abs(math.log(target_area / (base_w * base_h * (int(res) / 2048)**2))))
+    resolution = min(RESOLUTIONS, key=lambda res: abs(math.log(target_area / (base_w * base_h * (res / 2048)**2))))
     return resolution, ratio
 
 
 def build_kwargs(profile, payload, image_paths=None):
     requested_size = payload.get("size") or profile.default_size
     if requested_size == "auto":
-        resolution, aspect_ratio = "1536", "Auto"
+        resolution, aspect_ratio = 1536, "Auto"
     else:
         width, height = parse_size(requested_size, profile)
         if requested_size in {f"{w}x{h}" for w, h in BASE_SIZES.values()}:
             ratio = next(k for k, (w, h) in BASE_SIZES.items()
                          if requested_size == f"{w}x{h}")
-            resolution, aspect_ratio = "1536", ratio
+            resolution, aspect_ratio = 1536, ratio
         else:
             resolution, aspect_ratio = choose_parameters(width, height)
     paths = image_paths or []
