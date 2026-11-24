@@ -26,19 +26,42 @@ from .reference_confirmation import preview_candidate, confirm_reference, clear_
 from .recipe_prompt import build_edit_prompt, STYLES
 from .upstream_auth import token_tail
 
+STANDARD_RATIOS = ("1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16")
+QWEN_2_STEPS_MODEL = "qwen-image-2.1-2"
+
+
 def SIZE_LABEL(size: str) -> str:
-    """Display only: keep each original API size value unchanged."""
-    from math import gcd
+    """Display a familiar aspect-ratio preset, not the pixel GCD fraction."""
+    import math
     try:
         width, height = (int(x) for x in size.lower().split("x"))
-        common = gcd(width, height)
-        return f"{width}×{height}（{width // common}:{height // common}）"
+        ratio = min(STANDARD_RATIOS, key=lambda item: abs(
+            math.log((width / height) / (int(item.split(":")[0]) / int(item.split(":")[1])))
+        ))
+        return f"{width}×{height}（{ratio}）"
     except (ValueError, ZeroDivisionError):
         return size
 
 
+def model_size_choices(profile):
+    if profile.id == QWEN_2_STEPS_MODEL:
+        from .qwen_realtime import BASE_SIZES
+        return [("Auto", "auto")] + [
+            (f"{width}×{height}（{ratio}）", f"{width}x{height}")
+            for ratio, (width, height) in BASE_SIZES.items()
+        ]
+    return [(SIZE_LABEL(value), value) for value in profile.allowed_sizes]
+
+
+def default_size_value(profile):
+    return "auto" if profile.id == QWEN_2_STEPS_MODEL else profile.default_size
+
+
 def size_note(profile) -> str:
     """Summarize the current model's preset dimensions without hiding any."""
+    if profile.id == QWEN_2_STEPS_MODEL:
+        return ("**尺寸：** Auto + 7 种固定宽高比；所列像素是上游比例参考尺寸，"
+                "实际分辨率由 1536 档位及上游模型决定，并不保证与参考尺寸一致。")
     dims = []
     for value in profile.allowed_sizes:
         try:
@@ -52,7 +75,7 @@ def size_note(profile) -> str:
     largest = max(w * h for w, h in dims)
     return (f"**尺寸：** 共 {len(dims)} 种预设，像素面积 "
             f"{smallest:,}～{largest:,}；"
-            "选项中保留原始尺寸，括号内为精确宽高比。")
+            "选项中保留原始尺寸，括号内为最接近的标准宽高比。")
 
 
 
@@ -108,7 +131,7 @@ def selected_model(model_id):
             gr.update(visible=False),
             gr.update(visible=False),
         )
-    sizes = [(SIZE_LABEL(x), x) for x in p.allowed_sizes]
+    sizes = model_size_choices(p)
     note = (
         f"**模型：** {p.id}  \\n"
         f"**上游：** [HF Space](https://huggingface.co/spaces/{p.space_id})  \\n"
@@ -117,7 +140,7 @@ def selected_model(model_id):
         f"{size_note(p)}"
     )
     return (
-        gr.update(choices=sizes, value=p.default_size),
+        gr.update(choices=sizes, value=default_size_value(p)),
         gr.update(value=note),
         gr.update(value="文生图"),
         gr.update(visible=False),
@@ -206,11 +229,18 @@ def generate(mode, model_id, prompt, image_files, size, count, seed, token, extr
         raise gr.Error("请上传图片，或先从图库预览并确认添加参考图片")
     if len(files) > 4:
         raise gr.Error("上传图片框最多 4 张参考图片")
+    if model_id == QWEN_2_STEPS_MODEL and (custom_dimensions or "").strip():
+        raise gr.Error("qwen-image-2.1-2 仅支持 Auto 或尺寸下拉框中的 7 个固定预设，请清空自定义尺寸。")
     size = (custom_dimensions or "").strip().replace("×", "x") or size
-    try:
-        parse_size(size, p)
-    except ValueError as exc:
-        raise gr.Error(f"图片尺寸无效：{exc}") from None
+    if model_id == QWEN_2_STEPS_MODEL and size != "auto":
+        valid_sizes = {value for _, value in model_size_choices(p)}
+        if size not in valid_sizes:
+            raise gr.Error("请选择 qwen-image-2.1-2 的固定尺寸或 Auto")
+    if not (model_id == QWEN_2_STEPS_MODEL and size == "auto"):
+        try:
+            parse_size(size, p)
+        except ValueError as exc:
+            raise gr.Error(f"图片尺寸无效：{exc}") from None
     try:
         extra = json.loads(extra_json or "{}")
         if not isinstance(extra, dict):
@@ -258,7 +288,7 @@ def create_ui():
     opts = choices()
     default_id = opts[0][1] if opts else None
     current = profiles().get(default_id)
-    sizes = [(SIZE_LABEL(x), x) for x in current.allowed_sizes] if current else []
+    sizes = model_size_choices(current) if current else []
     with gr.Blocks(title="AI 图片工作室") as demo:
         gr.Markdown("# 🎨 AI 图片工作室\n文生图 · 图片编辑 · 第三方 Hugging Face Spaces", elem_id="studio-hero")
         with gr.Row():
@@ -303,7 +333,7 @@ def create_ui():
                     model = gr.Dropdown(choices=opts, value=default_id,
                         label="当前可用模型", interactive=True)
                     size = gr.Dropdown(choices=sizes,
-                        value=current.default_size if current else None, label="尺寸")
+                        value=default_size_value(current) if current else None, label="尺寸")
                     custom_dimensions = gr.Textbox(
                         label="自定义尺寸（可选，优先于下拉尺寸）",
                         placeholder="例如 1024x1536；宽高各 256～4096，最多 16777216 像素")

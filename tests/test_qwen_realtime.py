@@ -16,7 +16,7 @@ from gateway.qwen_realtime import (
     BASE_SIZES, RESOLUTIONS, MAX_REFERENCES, build_kwargs,
     choose_parameters, preset_sizes, run,
 )
-from gateway.ui import SIZE_LABEL, size_note
+from gateway.ui import SIZE_LABEL, size_note, model_size_choices, default_size_value
 
 
 def tiny_png():
@@ -92,12 +92,42 @@ class QwenRealtimeTests(unittest.TestCase):
         self.assertEqual(predict.call_args.kwargs["kwargs"]["resolution"], "1024")
         Client.return_value.close.assert_called_once()
 
-    def test_ui_exact_display_ratio_and_original_size_api_value(self):
+    def test_ui_standard_display_ratio_and_model_specific_choices(self):
         self.assertEqual(SIZE_LABEL("1024x1024"), "1024×1024（1:1）")
-        self.assertEqual(SIZE_LABEL("1344x768"), "1344×768（7:4）")
-        self.assertEqual(SIZE_LABEL("1184x864"), "1184×864（37:27）")
-        self.assertIn("21 种预设", size_note(self.model))
+        self.assertEqual(SIZE_LABEL("1344x768"), "1344×768（16:9）")
+        self.assertEqual(SIZE_LABEL("1184x864"), "1184×864（4:3）")
+        choices = model_size_choices(self.model)
+        self.assertEqual(choices[0], ("Auto", "auto"))
+        self.assertEqual(len(choices), 8)
+        self.assertEqual(choices[1:], [
+            (f"{w}×{h}（{ratio}）", f"{w}x{h}")
+            for ratio, (w, h) in BASE_SIZES.items()
+        ])
+        self.assertEqual(default_size_value(self.model), "auto")
+        self.assertEqual(default_size_value(load_profiles()["qwen-image-2.1"]), "1024x1024")
+        self.assertEqual(len(model_size_choices(load_profiles()["qwen-image-2.1"])), 10)
+        self.assertIn("7 种固定宽高比", size_note(self.model))
         self.assertIn("10 种预设", size_note(load_profiles()["qwen-image-2.1"]))
+
+    def test_auto_and_fixed_reference_dimensions_map_to_upstream(self):
+        auto = build_kwargs(self.model, {"prompt": "cat", "size": "auto", "seed": 9})
+        self.assertEqual((auto["resolution"], auto["aspect_ratio"]), ("1536", "Auto"))
+        for ratio, (w, h) in BASE_SIZES.items():
+            kw = build_kwargs(self.model, {"prompt": "cat", "size": f"{w}x{h}", "seed": 9})
+            self.assertEqual((kw["resolution"], kw["aspect_ratio"]), ("1536", ratio))
+
+    def test_auto_size_accepted_by_public_api(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".history_bucket_ready").write_text("test")
+            with patch.object(history, "ROOT", root):
+                with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
+                    response = TestClient(app).post("/v1/images/generations", json={
+                        "model": "qwen-image-2.1-2", "prompt": "cat",
+                        "size": "auto", "response_format": "b64_json",
+                    })
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(invoke.call_args.args[1]["size"], "auto")
 
     def test_public_model_and_edit_route_keep_history(self):
         with tempfile.TemporaryDirectory() as d:
