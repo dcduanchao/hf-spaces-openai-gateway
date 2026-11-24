@@ -89,8 +89,16 @@ def run(profile, payload, token, image_paths=None, ip_token=None):
         result = predict_logged(
             client, space_id=profile.space_id, api_name=profile.api_name, kwargs=kwargs,
         )
-        if not isinstance(result, (list, tuple)) or len(result) != 1:
-            raise ValueError("MOSS Image NSFW LoRA 返回结果应为单元素图片数组")
-        return result_bytes(select_result(result[0], []), profile)
+        # A single-output Gradio endpoint is unwrapped by gradio_client:
+        # predict() can return the image filepath directly, even though the
+        # HTTP API documentation describes a one-element result array.
+        if isinstance(result, (list, tuple)):
+            if len(result) != 1:
+                raise ValueError("MOSS Image NSFW LoRA 返回结果应为单张图片")
+            result = result[0]
+        image = select_result(result, [])
+        if not isinstance(image, (str, dict)):
+            raise ValueError("MOSS Image NSFW LoRA 未返回有效的图片路径")
+        return result_bytes(image, profile)
     finally:
         client.close()
