@@ -122,6 +122,13 @@ class MiniMaxH3Tests(unittest.TestCase):
                     })
                 self.assertEqual(generated.status_code, 200, generated.text)
                 self.assertEqual(invoker.call_args.args[1]["size"], "auto")
+                with patch("gateway.main.invoke", return_value=tiny_png()) as invoker:
+                    no_size = client.post("/v1/images/generations", json={
+                        "model": self.profile.id, "prompt": "cat",
+                        "response_format": "b64_json",
+                    })
+                self.assertEqual(no_size.status_code, 200, no_size.text)
+                self.assertEqual(invoker.call_args.args[0].default_size, "auto")
                 image_files = [("image", (f"ref{i}.png", tiny_png(), "image/png"))
                                for i in range(8)]
                 with patch("gateway.main.invoke", return_value=tiny_png()) as invoker:
