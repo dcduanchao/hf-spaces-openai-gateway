@@ -418,8 +418,7 @@ def create_ui():
                         placeholder="例如 1024x1536；宽高各 256～4096，最多 16777216 像素")
                 space_link = gr.HTML(value=model_space_link(current))
                 with gr.Column(visible=False) as face_panel:
-                    gr.Markdown("### 👤 面部交换
-仅需两张图和一个基础模型。请确保获得照片中人物的许可。")
+                    gr.Markdown("### 👤 面部交换\\n仅需两张图和一个基础模型。请确保获得照片中人物的许可。")
                     with gr.Row():
                         face_reference = gr.Image(type="filepath", label="① 参考人脸（换成这个人的头部）", sources=["upload"])
                         face_target = gr.Image(type="filepath", label="② 目标身体/场景（保留背景与姿势）", sources=["upload"])
