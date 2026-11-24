@@ -61,27 +61,30 @@ Gradio 网页工作室的生图、图片编辑已改为调用同一个本地 Ope
 
 OpenAI 标准 Images API 请求不要求提供 `seed` 字段，网关继续兼容省略该字段：省略时内部默认 `-1`（随机）。现有网关同时保留可选的非标准 `seed` 扩展，以兼容固定 Seed 的旧调用方；不应把 `seed` 描述成 OpenAI 官方标准参数。
 
-## BFS Best Face Swap（`bfs-face-swap`）
+## BFS Best Face Swap（`bfs-face-swap-t6` / `bfs-face-swap-q2`）
 
-上游：[hugging-apps/bfs-best-face-swap](https://huggingface.co/spaces/hugging-apps/bfs-best-face-swap)。这是**专用双图面部交换**，仅支持 `POST /v1/images/edits`，不提供文生图。请仅在取得图片中人物许可的情况下使用。
+上游：[hugging-apps/bfs-best-face-swap](https://huggingface.co/spaces/hugging-apps/bfs-best-face-swap)。面部交换现拆分为 **两个独立的 OpenAI 模型 ID**，网页模型下拉框同样显示两项，不再设置第二层基础模型单选框：
 
-网页工作室选择 `bfs-face-swap` 后，会显示简化界面：**① 参考人脸**（要替换进去的头部）、**② 目标身体/场景**（保留背景和姿势），然后仅从 **Turbo · Viggle 6-step**（默认）与 **Base · Qwen-Image-2.1** 中选择一个，点击“开始面部交换”。其他参数不需要用户填写；HF Token 可沿用现有输入框。
+- `bfs-face-swap-t6`：上游 `Turbo · Viggle 6-step`，固定 6 个推理步数
+- `bfs-face-swap-q2`：上游 `Base · Qwen-Image-2.1`，当前配置 30 个推理步数
 
-`/face_swap` 的 9 个必填参数：`reference_face` 和 `target_image`（两个 FileData 图片）、`base_model`（精确枚举）、`resolution=1536`（整数；上游实际 Gradio 运行校验为数值选项 `1024`、`1536`、`2048`，与自动生成的 API 文档中字符串类型不一致）、`num_inference_steps`、`lora_scale=1.0`、`seed=0.0`、`randomize_seed=true`、`prompt`（上游文档提供的 head_swap 固定提示词）。推理步数默认使用 Turbo 6 步、Base 30 步（不再提前调用 `/on_mode_change`，避免其组件更新格式导致 Base 模式在准备阶段失败）。随机 Seed 默认启用；API 请求如有需要也可通过可选非标准 `seed` 扩展提供固定 Seed。
+两个模型均**只支持** `POST /v1/images/edits`，且必须恰好上传两张图片：**第 1 张参考人脸**（`reference_face`），**第 2 张目标身体/场景**（`target_image`）。网页展示两张独立的上传框，选择模型、上传两张图片后即可点击“开始面部交换”，不需要填写其余参数。请仅在取得图片中人物许可的情况下使用。
 
-上游返回 `[(before_filepath, after_filepath), used_seed]`。网关将 **Before 和 After 两张图片按顺序**放入 OpenAI Images API 的 `data` 数组，网页图库分别标为“Before · 原图”“After · 换脸结果”，并将两张图片均存入历史记录。两张输入按 `[reference_face, target_image]` 顺序传递。API 也严格拒绝少于或多于两张参考图；其他模型的图片数量限制保持不变。
+上游 `/face_swap` 的 9 个参数由适配器自动填充：`reference_face`、`target_image`、`base_model`（由模型 ID 固定）、`resolution=1536`（**整数**，上游 Gradio 校验选项为 1024、1536、2048）、`num_inference_steps`（Turbo 6、Base 30）、`lora_scale=1.0`、`seed=0.0`、`randomize_seed=true` 和固定 `prompt`。可选非标准 `seed` 请求参数仍可指定固定随机种子；模型不再接受 `extra_body.base_model`，避免选择和指定值冲突。
+
+上游返回 `[(before_filepath, after_filepath), used_seed]`。网关将 **Before 和 After** 两张图片按顺序放入 API 响应的 `data` 数组，网页分别标为“Before · 原图”“After · 换脸结果”，并保存到历史记录。其他模型原有行为保持不变。
 
 ```bash
 curl -X POST "https://duan0320-hf-spaces-openai-gateway.hf.space/v1/images/edits" \\
   -H "X-HF-Token: hf_YOUR_TOKEN" \\
-  -F "model=bfs-face-swap" \\
+  -F "model=bfs-face-swap-t6" \\
   -F "prompt=head_swap" \\
-  -F 'extra_body={"base_model":"Turbo · Viggle 6-step"}' \\
   -F "image=@reference_face.png" \\
   -F "image=@target_body.png"
 ```
 
-接口接入以提供的 Gradio API 文档为依据；实际第三方 ZeroGPU 推理结果需要上线后验证。
+如果需要 Qwen Base 模式，只将 `model` 改为 `bfs-face-swap-q2`。旧 ID `bfs-face-swap` 不再注册，旧请求须迁移到新 ID。
+
 
 ## MiniMax H3 Image MysticXXX V5（`h3-my-v5`）
 
