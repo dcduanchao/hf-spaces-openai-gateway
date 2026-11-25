@@ -202,6 +202,39 @@ class EditUrlTests(unittest.TestCase):
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(len(invoke.call_args.kwargs["image_paths"]), 2)
 
+    def test_multipart_upload_aliases_for_qwen_2_step(self):
+        for field in ("image", "images", "image[]", "images[]"):
+            with self.subTest(field=field):
+                with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
+                    response = self.client.post("/v1/images/edits", data={
+                        "model": "qwen-image-2.1-2",
+                        "prompt": "白色衣服", "size": "768x1024",
+                        "response_format": "b64_json",
+                    }, files={field: ("reference.png", tiny_png(), "image/png")})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(len(invoke.call_args.kwargs["image_paths"]), 1)
+
+    def test_multipart_url_array_alias(self):
+        with patch("gateway.main.download_public_image", return_value=tiny_png()) as downloaded:
+            with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
+                response = self.client.post("/v1/images/edits", data={
+                    "model": "qwen-image-2.1-2", "prompt": "edit",
+                    "image_url[]": "https://example.org/reference.png",
+                    "response_format": "b64_json",
+                })
+        self.assertEqual(response.status_code, 200, response.text)
+        downloaded.assert_called_once_with("https://example.org/reference.png")
+        self.assertEqual(len(invoke.call_args.kwargs["image_paths"]), 1)
+
+    def test_reference_ids_are_not_image_bytes(self):
+        response = self.client.post("/v1/images/edits", data={
+            "model": "qwen-image-2.1-2", "prompt": "白色衣服",
+            "referenceImageIds": "e0a6fc14-449e-4a59-840c-85fcd980fad6",
+        })
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertEqual(response.json()["error"]["code"], "invalid_image_count")
+        self.assertIn("referenceImageIds", response.json()["error"]["message"])
+
     def test_mixed_upload_and_url(self):
         with patch("gateway.main.download_public_image", return_value=tiny_png()):
             with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
