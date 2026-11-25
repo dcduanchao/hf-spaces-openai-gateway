@@ -319,19 +319,31 @@ async def edit(request: Request, authorization: str | None = Header(default=None
             if not isinstance(extras, dict):
                 err(400, "invalid_parameters", "extra_body must be a JSON object")
             fields["extra_body"] = extras
-            # FormData.multi_items preserves input order for repeated image/image_url.
+            # Standard OpenAI uses 'image'; accept common multipart array
+            # encodings from browsers and third-party clients as well.
+            # FormData.multi_items preserves order for repeated upload fields.
+            upload_keys = {"image", "images", "image[]", "images[]"}
+            url_keys = {"image_url", "image_urls", "image_url[]", "image_urls[]"}
             for key, value in form.multi_items():
-                if key == "image":
+                if key in upload_keys:
                     if isinstance(value, UploadFile):
                         sources.append(("upload", value))
                     elif isinstance(value, str):
                         sources.append(("data_url" if value.startswith("data:") else "url", value))
                     else:
                         err(400, "invalid_image", "image must be an uploaded file or public HTTPS URL")
-                elif key in ("image_url", "image_urls"):
+                elif key in url_keys:
                     if not isinstance(value, str):
                         err(400, "invalid_image", "image_url must be a public HTTPS URL")
                     sources.append(("data_url" if value.startswith("data:") else "url", value))
+            if not sources:
+                # Never log images, file names, prompts, URLs or request body.
+                safe_keys = sorted({key for key in form.keys() if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_\\[\\]]{0,63}", key)})
+                access_logger.warning("[gateway-edit] no recognizable image inputs; multipart_field_names=%s", safe_keys[:24])
+                if any(key in form for key in ("referenceImageIds", "reference_image_ids")):
+                    err(400, "invalid_image_count",
+                        "referenceImageIds are client-side identifiers, not image data. Upload an image file under 'image' or provide a public HTTPS/Data URL.")
+
         else:
             err(415, "unsupported_media_type", "Use application/json or multipart/form-data")
 
