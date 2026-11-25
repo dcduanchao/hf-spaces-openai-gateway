@@ -338,7 +338,7 @@ async def edit(request: Request, authorization: str | None = Header(default=None
                     sources.append(("data_url" if value.startswith("data:") else "url", value))
             if not sources:
                 # Never log images, file names, prompts, URLs or request body.
-                safe_keys = sorted({key for key in form.keys() if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_\\[\\]]{0,63}", key)})
+                safe_keys = sorted({key for key in form.keys() if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_\[\]]{0,63}", key)})
                 access_logger.warning("[gateway-edit] no recognizable image inputs; multipart_field_names=%s", safe_keys[:24])
                 if any(key in form for key in ("referenceImageIds", "reference_image_ids")):
                     err(400, "invalid_image_count",
