@@ -26,12 +26,32 @@ app.include_router(admin_router)
 
 access_logger = logging.getLogger("uvicorn.error")
 
+# Log only field NAMES, never values, filenames, URLs, prompts, tokens or image bytes.
+_SAFE_FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_\\[\\]-]{0,63}\\Z")
+
+
+def _api_field_names(keys) -> list[str]:
+    names = set()
+    for key in keys:
+        if isinstance(key, str) and _SAFE_FIELD_NAME.fullmatch(key):
+            names.add(key)
+    return sorted(names)[:40]
+
+
+def _log_received_api_fields(request: Request, kind: str, keys, extra_keys=()) -> None:
+    request_id = getattr(request.state, "gateway_request_id", "-")
+    access_logger.info(
+        "[gateway-api-fields] id=%s mode=%s fields=%s extra_body_fields=%s values=[OMITTED]",
+        request_id, kind, _api_field_names(keys), _api_field_names(extra_keys),
+    )
+
 
 @app.middleware("http")
 async def request_duration_log(request: Request, call_next):
     """Log complete HTTP latency (including ZeroGPU queue); never log token or prompt."""
     start = time.monotonic()
     request_id = uuid.uuid4().hex[:12]
+    request.state.gateway_request_id = request_id
     status = 500
     try:
         response = await call_next(request)
@@ -234,6 +254,8 @@ def serve_temp_image(image_name: str):
 @app.post("/v1/images/generations")
 def generate(body: GenerateRequest, request: Request, authorization: str | None = Header(default=None), x_hf_token: str | None = Header(default=None)):
     token = request_hf_token(authorization, x_hf_token)
+    _log_received_api_fields(request, "generations", body.model_fields_set,
+                             (body.extra_body or {}).keys())
     return produce(body.model_dump(exclude_none=True, exclude_unset=False), token,
                    ip_token=request.headers.get("x-ip-token"))
 
@@ -277,6 +299,9 @@ async def edit(request: Request, authorization: str | None = Header(default=None
             raw = await request.json()
             if not isinstance(raw, dict):
                 err(400, "invalid_parameters", "JSON body must be an object")
+            nested = raw.get("extra_body")
+            _log_received_api_fields(request, "edits-json", raw.keys(),
+                                     nested.keys() if isinstance(nested, dict) else ())
             sources = _edit_json_images(raw, 2 if raw.get("model") in ("bfs-face-swap-t6", "bfs-face-swap-q2") else 8 if raw.get("model") == "h3-my-v5" else 4)
             reserved = {"model", "prompt", "size", "n", "seed", "response_format",
                         "extra_body", "image", "images", "image_urls"}
@@ -305,6 +330,7 @@ async def edit(request: Request, authorization: str | None = Header(default=None
             fields["extra_body"] = extras
         elif content_type.startswith("multipart/form-data"):
             form = await request.form()
+            _log_received_api_fields(request, "edits-multipart", form.keys())
             fields = {}
             for key in ("model", "prompt", "size", "n", "seed", "response_format"):
                 if key in form:
