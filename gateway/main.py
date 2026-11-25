@@ -27,7 +27,7 @@ app.include_router(admin_router)
 access_logger = logging.getLogger("uvicorn.error")
 
 # Log only field NAMES, never values, filenames, URLs, prompts, tokens or image bytes.
-_SAFE_FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_\\[\\]-]{0,63}\\Z")
+_SAFE_FIELD_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_\[\]-]{0,63}$")
 
 
 def _api_field_names(keys) -> list[str]:
