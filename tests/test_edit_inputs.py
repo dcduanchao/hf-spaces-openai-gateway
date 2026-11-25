@@ -172,6 +172,57 @@ class EditUrlTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 200, response.text)
                     self.assertEqual(invoke.call_args.args[2], "hf_USERPRO123")
 
+    def test_received_api_logs_fields_but_never_field_values(self):
+        import logging
+        secret_prompt = "SECRET_PROMPT_DONT_LOG"
+        secret_url = "https://example.org/private-reference-name.png"
+        with patch("gateway.main.download_public_image", return_value=tiny_png()):
+            with patch("gateway.main.invoke", return_value=tiny_png()):
+                with self.assertLogs("uvicorn.error", level="INFO") as collected:
+                    response = self.client.post("/v1/images/edits", json=self.payload(
+                        prompt=secret_prompt,
+                        image={"image_url": secret_url},
+                        extra_body={},
+                    ))
+        self.assertEqual(response.status_code, 200, response.text)
+        logs = "\\n".join(collected.output)
+        self.assertIn("[gateway-api-fields]", logs)
+        self.assertIn("mode=edits-json", logs)
+        self.assertIn("prompt", logs)
+        self.assertIn("image", logs)
+        self.assertIn("values=[OMITTED]", logs)
+        self.assertNotIn(secret_prompt, logs)
+        self.assertNotIn(secret_url, logs)
+
+    def test_multipart_received_field_names_only(self):
+        with patch("gateway.main.invoke", return_value=tiny_png()):
+            with self.assertLogs("uvicorn.error", level="INFO") as collected:
+                response = self.client.post("/v1/images/edits", data={
+                    "model": "qwen-image-2.1-2", "prompt": "SECRET_MULTIPART_PROMPT",
+                    "seed": "-1", "extra_body": "{}",
+                }, files={"images[]": ("PRIVATE_FILENAME.png", tiny_png(), "image/png")})
+        self.assertEqual(response.status_code, 200, response.text)
+        line = next(value for value in collected.output if "[gateway-api-fields]" in value)
+        self.assertIn("mode=edits-multipart", line)
+        self.assertIn("images[]", line)
+        self.assertIn("values=[OMITTED]", line)
+        self.assertNotIn("SECRET_MULTIPART_PROMPT", line)
+        self.assertNotIn("PRIVATE_FILENAME.png", line)
+
+    def test_generation_received_field_names_only(self):
+        with patch("gateway.main.invoke", return_value=tiny_png()):
+            with self.assertLogs("uvicorn.error", level="INFO") as collected:
+                response = self.client.post("/v1/images/generations", json={
+                    "model": "qwen-image-2.1-2",
+                    "prompt": "SECRET_GENERATION_PROMPT",
+                    "response_format": "b64_json",
+                })
+        self.assertEqual(response.status_code, 200, response.text)
+        line = next(value for value in collected.output if "[gateway-api-fields]" in value)
+        self.assertIn("mode=generations", line)
+        self.assertIn("prompt", line)
+        self.assertNotIn("SECRET_GENERATION_PROMPT", line)
+
     def test_multipart_token_forwarding(self):
         with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
             response = self.client.post(
