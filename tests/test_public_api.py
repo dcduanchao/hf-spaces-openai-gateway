@@ -56,7 +56,10 @@ class PublicApiTests(unittest.TestCase):
             response = self.client.get("/v1/models")
         self.assertEqual(response.status_code, 200)
         ids = {x["id"] for x in response.json()["data"]}
-        self.assertIn("qwen-image-2.1", ids)
+        self.assertIn("a-qwen-image-2.1", ids)
+        self.assertIn("a-qwen-image-2.1-6", ids)
+        self.assertIn("a-qwen-image-2.1-2", ids)
+        self.assertFalse(any(model_id.startswith("qwen-image") for model_id in ids))
         self.assertIn("z-image-turbo", ids)
         self.assertEqual(set(response.json()), {"data"})
         expected = {"id", "object", "created", "owned_by", "type", "display_name"}
@@ -74,11 +77,25 @@ class PublicApiTests(unittest.TestCase):
             response = self.client.get("/v1/models/detail")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["object"], "list")
-        model = next(item for item in response.json()["data"] if item["id"] == "qwen-image-2.1")
+        model = next(item for item in response.json()["data"] if item["id"] == "a-qwen-image-2.1")
         self.assertEqual(model["owned_by"], "duan0320/Qwen-Image-2.1")
         self.assertIn("sizes", model)
         self.assertIn("modes", model)
         self.assertIn("quality", model["extra_parameters"])
+
+    def test_qwen_public_aliases_resolve_to_same_profile(self):
+        from gateway.main import profile_for
+        for model_id in ("qwen-image-2.1", "qwen-image-2.1-6", "qwen-image-2.1-2"):
+            with self.subTest(model=model_id):
+                old_profile = profile_for(model_id, "generations")
+                aliased_profile = profile_for("a-" + model_id, "generations")
+                self.assertEqual(aliased_profile.id, old_profile.id)
+                self.assertEqual(aliased_profile.space_id, old_profile.space_id)
+
+    def test_qwen_model_ids_consistent_across_endpoints(self):
+        listing = {item["id"] for item in self.client.get("/v1/models").json()["data"]}
+        details = {item["id"] for item in self.client.get("/v1/models/detail").json()["data"]}
+        self.assertEqual(listing, details)
 
     def test_anonymous_request_does_not_use_server_secret(self):
         with patch.dict(os.environ, {"UPSTREAM_HF_TOKEN": "hf_OWNER_SECRET"}):
