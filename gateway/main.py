@@ -118,9 +118,17 @@ def upstream_error_message(exc: Exception) -> tuple[int, str, str]:
 
 
 
+def public_model_id(model_id: str) -> str:
+    return 'a-' + model_id if model_id.startswith('qwen-image') else model_id
+
+
+def internal_model_id(model_id: str) -> str:
+    return model_id[2:] if model_id.startswith('a-qwen-image') else model_id
+
+
 def profile_for(model: str, mode: str):
     try:
-        profile = load_profiles().get(model)
+        profile = load_profiles().get(internal_model_id(model))
     except Exception:
         err(503, "catalog_invalid", "Model catalog configuration invalid")
     if not profile:
@@ -192,7 +200,7 @@ def produce(payload: dict, token: str | None, mode="generations", paths=None, ip
         history.finish_record(record_id, "failed", round((time.monotonic() - started) * 1000), code)
         err(status, code, message)
     history.finish_record(record_id, "success", round((time.monotonic() - started) * 1000))
-    return {"created": int(time.time()), "data": data, "model": p.id}
+    return {"created": int(time.time()), "data": data, "model": public_model_id(p.id)}
 
 @app.get("/health")
 def health():
@@ -205,7 +213,7 @@ CATALOG_PUBLISHED_AT = int(time.time())
 @app.get("/v1/models")
 def models():
     return {"data": [{
-        "id": p.id,
+        "id": public_model_id(p.id),
         "object": "model",
         "created": CATALOG_PUBLISHED_AT,
         "owned_by": p.space_id.split("/", 1)[0],
@@ -217,7 +225,7 @@ def models():
 @app.get("/v1/models/detail")
 def models_detail():
     return {"object": "list", "data": [{
-        "id": p.id,
+        "id": public_model_id(p.id),
         "object": "model",
         "owned_by": p.space_id,
         "description": p.description,
