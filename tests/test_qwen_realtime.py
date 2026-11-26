@@ -151,10 +151,10 @@ class QwenRealtimeTests(unittest.TestCase):
             with patch.object(history, "ROOT", root):
                 client = TestClient(app)
                 models = client.get("/v1/models").json()["data"]
-                self.assertIn("qwen-image-2.1-2", {x["id"] for x in models})
+                self.assertIn("a-qwen-image-2.1-2", {x["id"] for x in models})
                 with patch("gateway.main.invoke", return_value=tiny_png()) as invoke:
                     res = client.post("/v1/images/edits", headers={"X-HF-Token":"hf_TEST_TOKEN"},
-                        data={"model":"qwen-image-2.1-2", "prompt":"edit",
+                        data={"model":"a-qwen-image-2.1-2", "prompt":"edit",
                               "size":"1024x1024", "response_format":"b64_json"},
                         files={"image":("ref.png",tiny_png(),"image/png")})
                 self.assertEqual(res.status_code, 200, res.text)
