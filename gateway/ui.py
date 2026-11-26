@@ -441,6 +441,11 @@ def create_ui():
                             count = gr.Slider(1, 4, value=1, step=1, label="生成数量")
                             seed = gr.Number(-1, precision=0, label="Seed（随机时为 -1）", interactive=False)
                             random_seed = gr.Checkbox(value=True, label="随机 Seed")
+                        gr.Markdown(
+                            "⚠️ **生成失败可能是 ZeroGPU 免费时长或运行次数不足。** "
+                            "请在下方填写自己的 **HF Token**，点击「验证 Token / 查询 ZeroGPU 可用时长」，"
+                            "确认额度后再生成。若账号额度已用尽，请等待重置；Token 不能绕过额度限制。"
+                        )
                         with gr.Accordion("Hugging Face Token（无痕模式和 API 均可使用）", open=True):
                             token = gr.Textbox(type="password", label="HF Token",
                                 placeholder="hf_...（无痕模式请在此填写，关闭窗口后不会自动保留）")
